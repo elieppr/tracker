@@ -1,0 +1,8 @@
+{
+  "name": "My Free iPhone App",
+  "short_name": "FreeApp",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#007aff"
+}
