@@ -1,4 +1,152 @@
-<script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>LifeSync Tracker</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Prevents bouncing/scrolling issues on iOS */
+        body {
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-top: env(safe-area-inset-top);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 flex flex-col h-screen overflow-hidden">
+
+    <header class="bg-white border-b border-slate-200 px-6 py-4 pt-10 shrink-0">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900" id="app-title">Log Your Day</h1>
+    </header>
+
+    <main class="flex-grow overflow-y-auto px-4 py-6 space-y-6" id="main-content">
+        
+        <section id="view-log" class="space-y-6">
+            <div class="bg-white p-4 rounded-2xl shadow-sm space-y-2">
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Date & Time</label>
+                <input type="datetime-local" id="log-date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-semibold uppercase tracking-wider text-slate-400">Energy Level</label>
+                    <span id="energy-value" class="text-lg font-bold text-blue-600">5/10</span>
+                </div>
+                <input type="range" id="log-energy" min="1" max="10" value="5" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="updateEnergyDisplay(this.value)">
+                <div class="flex justify-between text-xs text-slate-400 px-1">
+                    <span>Exhausted</span>
+                    <span>Neutral</span>
+                    <span>Hyper-Alert</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4">
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Emotions</label>
+                
+                <div>
+                    <span class="text-sm font-semibold text-emerald-600 mb-2 block">Positive (+)</span>
+                    <div id="positive-emotions-list" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <div>
+                    <span class="text-sm font-semibold text-rose-500 mb-2 block">Negative (-)</span>
+                    <div id="negative-emotions-list" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+
+            <button onclick="saveCurrentLog()" class="w-full bg-blue-600 active:bg-blue-700 text-white font-semibold py-4 rounded-2xl shadow-md transition duration-150">
+                Save Entry
+            </button>
+        </section>
+
+        <section id="view-calendar" class="hidden space-y-4">
+            <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4">
+                <div class="flex justify-between items-center">
+                    <button onclick="changeMonth(-1)" class="p-2 text-slate-500 active:scale-95">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <h2 id="calendar-month-year" class="font-bold text-lg text-slate-800">July 2026</h2>
+                    <button onclick="changeMonth(1)" class="p-2 text-slate-500 active:scale-95">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400">
+                    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                </div>
+
+                <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
+            </div>
+
+            <div class="flex justify-center gap-4 text-xs text-slate-400 px-2">
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-blue-300"></span> Energy Level</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Pos Mood</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Neg Mood</span>
+            </div>
+        </section>
+
+        <section id="view-insights" class="hidden space-y-6">
+            <div class="bg-white p-4 rounded-2xl shadow-sm text-center py-10">
+                <p class="text-slate-400">Analytics and graphs are coming in Step 3!</p>
+            </div>
+        </section>
+
+        <section id="view-settings" class="hidden space-y-6">
+            <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Manage Emotions</h3>
+                
+                <div class="flex gap-2">
+                    <input type="text" id="new-emotion-name" placeholder="Emotion Name" class="flex-grow bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none">
+                    <select id="new-emotion-valence" class="bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none text-sm">
+                        <option value="positive">Positive</option>
+                        <option value="negative">Negative</option>
+                    </select>
+                    <button onclick="addNewEmotion()" class="bg-blue-600 text-white px-4 rounded-xl font-bold">+</button>
+                </div>
+
+                <div id="settings-emotions-list" class="divide-y divide-slate-100"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="day-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-end justify-center z-50 transition-opacity duration-300">
+        <div class="bg-white w-full max-w-lg rounded-t-[30px] p-6 pb-10 space-y-6 max-h-[85vh] overflow-y-auto translate-y-full transition-transform duration-300" id="day-modal-sheet">
+            <div class="flex justify-between items-center">
+                <h3 id="modal-date-title" class="text-xl font-bold text-slate-900">July 14, 2026</h3>
+                <button onclick="closeDayModal()" class="bg-slate-100 text-slate-500 font-bold p-2 rounded-full w-8 h-8 flex items-center justify-center">✕</button>
+            </div>
+            
+            <div id="modal-content-area" class="space-y-4">
+                </div>
+        </div>
+    </div>
+
+    <nav class="bg-white border-t border-slate-200 flex justify-around py-3 px-2 shrink-0 z-10">
+        <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1 text-blue-600" id="btn-log">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+            <span class="text-[10px] font-medium">Log</span>
+        </button>
+        <button onclick="switchTab('calendar')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-calendar">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <span class="text-[10px] font-medium">Calendar</span>
+        </button>
+        <button onclick="switchTab('insights')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-insights">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+            <span class="text-[10px] font-medium">Insights</span>
+        </button>
+        <button onclick="switchTab('settings')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-settings">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <span class="text-[10px] font-medium">Settings</span>
+        </button>
+    </nav>
+
+    <script>
         // --- 1. DEFAULT DATASETS (If Local Storage is empty) ---
         const DEFAULT_EMOTIONS = [
             { id: "e_happy", name: "Happy", valence: "positive" },
@@ -29,29 +177,26 @@
             if (savedData) {
                 try {
                     state = JSON.parse(savedData);
-                    
-                    // SELF-HEALING / UPGRADE LOGIC:
-                    // If old Step 1 data exists, patch it so the calendar doesn't crash
-                    if (!state.dailyLogs) {
-                        state.dailyLogs = [];
-                    }
-                    if (!state.userSettings) {
-                        state.userSettings = { customEmotions: DEFAULT_EMOTIONS };
-                    }
-                    if (!state.userSettings.customEmotions || state.userSettings.customEmotions.length === 0) {
-                        state.userSettings.customEmotions = DEFAULT_EMOTIONS;
-                    }
                 } catch (e) {
-                    // Fallback if data is corrupted
-                    state = {
-                        userSettings: { customEmotions: DEFAULT_EMOTIONS },
-                        dailyLogs: []
-                    };
+                    console.error("Error parsing local storage", e);
                 }
-            } else {
-                state.userSettings.customEmotions = DEFAULT_EMOTIONS;
-                saveStateToLocalStorage();
             }
+
+            // SELF-HEALING / DATABASE SANITIZER:
+            // Ensures your data schema always matches Step 2 layout and never crashes the browser!
+            if (!state || typeof state !== 'object') {
+                state = { userSettings: { customEmotions: [] }, dailyLogs: [] };
+            }
+            if (!state.userSettings) {
+                state.userSettings = {};
+            }
+            if (!state.userSettings.customEmotions || state.userSettings.customEmotions.length === 0) {
+                state.userSettings.customEmotions = [...DEFAULT_EMOTIONS];
+            }
+            if (!state.dailyLogs) {
+                state.dailyLogs = [];
+            }
+            saveStateToLocalStorage();
 
             renderEmotionsInLogger();
             renderEmotionsInSettings();
@@ -416,11 +561,10 @@
             renderEmotionsInSettings();
         }
 
+        // Deletion fallback algorithm
         function deleteEmotion(emotionId) {
             if (!confirm("Are you sure you want to delete this emotion? Previous logs using this emotion will safely fallback to a generic placeholder.")) return;
 
-            // CRITICAL GRACE LOGIC:
-            // Scan historical logs. Any log containing this exact deleted emotion ID converts to fallbacks.
             const targetEmo = state.userSettings.customEmotions.find(e => e.id === emotionId);
             const fallbackValue = targetEmo.valence === 'positive' ? 'fallback_positive' : 'fallback_negative';
 
@@ -428,7 +572,6 @@
                 log.emotions = log.emotions.map(id => id === emotionId ? fallbackValue : id);
             });
 
-            // Remove it from active settings list
             state.userSettings.customEmotions = state.userSettings.customEmotions.filter(e => e.id !== emotionId);
 
             saveStateToLocalStorage();
@@ -436,3 +579,5 @@
             renderEmotionsInSettings();
         }
     </script>
+</body>
+</html>
