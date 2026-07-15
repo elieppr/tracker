@@ -16,7 +16,7 @@
             padding-bottom: env(safe-area-inset-bottom);
             padding-top: env(safe-area-inset-top);
         }
-        /* Custom scrollbar behavior for the horizontal timeline tracks */
+        /* Custom scrollbar behavior */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -81,28 +81,13 @@
 
         <section id="view-calendar" class="hidden space-y-4">
             
-            <div id="calendar-month-container" class="space-y-4">
-                <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4">
-                    <div class="flex justify-between items-center">
-                        <button onclick="changeMonth(-1)" class="p-2 text-slate-500 active:scale-95">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
-                        </button>
-                        <h2 id="calendar-month-year" class="font-bold text-lg text-slate-800">July 2026</h2>
-                        <button onclick="changeMonth(1)" class="p-2 text-slate-500 active:scale-95">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-                        </button>
+            <div id="calendar-month-container" class="space-y-6">
+                <div id="vertical-months-scroll" class="space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar rounded-2xl">
                     </div>
-
-                    <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400">
-                        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-                    </div>
-
-                    <div id="calendar-grid" class="grid grid-cols-7 gap-1.5"></div>
-                </div>
 
                 <div class="bg-white p-4 rounded-2xl shadow-sm space-y-2 text-xs text-slate-400">
                     <span class="block font-bold uppercase tracking-wider">Month Summary Guide</span>
-                    <p class="leading-relaxed">Calendar squares shade deeper blue based on your average daily energy. Colored dots show if you had positive (green) or negative (red) emotional states.</p>
+                    <p class="leading-relaxed">Day circles shade deeper blue based on average energy. Colored rings or dots represent logged emotions (Green = Positive, Red = Negative).</p>
                 </div>
             </div>
 
@@ -113,29 +98,14 @@
                         <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Timeline Zoom</span>
                         <span id="zoom-label" class="text-xs font-bold text-blue-600">Daily View</span>
                     </div>
-                    
-                    <input type="range" id="timeline-zoom-slider" min="15" max="80" value="15" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="handleZoomChange(this.value)">
-                    <div class="flex justify-between text-[10px] text-slate-400 px-1">
-                        <span>Zoom Out (Daily/Weekly)</span>
-                        <span>Zoom In (Hourly details)</span>
-                    </div>
+                    <input type="range" id="timeline-zoom-slider" min="16" max="64" value="24" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="handleZoomChange(this.value)">
                 </div>
 
-                <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4 overflow-hidden">
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Weekly Flow</h3>
+                <div class="bg-white p-6 rounded-2xl shadow-sm relative overflow-hidden">
+                    <div class="absolute left-10 top-6 bottom-6 border-l-2 border-slate-200"></div>
                     
-                    <div class="space-y-3" id="timeline-rows-viewport">
+                    <div id="continuous-timeline-feed" class="space-y-6 relative z-10">
                         </div>
-                </div>
-
-                <div class="bg-white p-4 rounded-2xl shadow-sm space-y-2 text-xs text-slate-400">
-                    <span class="block font-bold uppercase tracking-wider">Timeline Color Guide</span>
-                    <div class="grid grid-cols-2 gap-2 text-slate-500 pt-1">
-                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500"></span> Positive Mood Log</span>
-                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-rose-500"></span> Negative Mood Log</span>
-                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-400"></span> Mixed Mood Log</span>
-                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-500"></span> Energy Log Only</span>
-                    </div>
                 </div>
             </div>
 
@@ -185,7 +155,7 @@
         </button>
         <button onclick="switchTab('calendar')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-calendar">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-            <span class="text-[10px] font-medium">Calendar</span>
+            <span class="text-[10px] font-medium">History</span>
         </button>
         <button onclick="switchTab('insights')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-insights">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
@@ -198,7 +168,7 @@
     </nav>
 
     <script>
-        // --- 1. DEFAULT DATASETS (If Local Storage is empty) ---
+        // --- 1. DEFAULT DATASETS ---
         const DEFAULT_EMOTIONS = [
             { id: "e_happy", name: "Happy", valence: "positive" },
             { id: "e_calm", name: "Calm", valence: "positive" },
@@ -208,7 +178,7 @@
             { id: "e_anxious", name: "Anxious", valence: "negative" }
         ];
 
-        // MOCK DATA GENERATION (To show off timeline mode instantly!)
+        // MOCK DATA (With varying times to demonstrate timeline instantly)
         const generateMockData = () => {
             const today = new Date();
             const yesterday = new Date();
@@ -231,23 +201,18 @@
             ];
         };
 
-        // Global State
         let state = {
-            userSettings: {
-                customEmotions: []
-            },
+            userSettings: { customEmotions: [] },
             dailyLogs: []
         };
 
-        let calendarViewDate = new Date();
-        let activeCalendarMode = 'month'; // 'month' or 'timeline'
-        let currentZoomLevel = 15; // Represents column-width in px (15px to 80px)
+        let activeCalendarMode = 'month'; 
+        let currentZoomLevel = 24; // Visual spacing variable (Tailwind gap size)
 
-        // --- 2. INITIALIZATION ON LOAD ---
+        // --- 2. INITIALIZATION ---
         window.addEventListener('load', () => {
             resetLogDatePicker();
 
-            // Load Data from Local Storage
             const savedData = localStorage.getItem('lifesync_data');
             if (savedData) {
                 try {
@@ -257,7 +222,6 @@
                 }
             }
 
-            // DATABASE SCHEMATIC INITIALIZATION & SELF-HEALING:
             if (!state || typeof state !== 'object') {
                 state = { userSettings: { customEmotions: [] }, dailyLogs: [] };
             }
@@ -268,7 +232,7 @@
                 state.userSettings.customEmotions = [...DEFAULT_EMOTIONS];
             }
             if (!state.dailyLogs || state.dailyLogs.length === 0) {
-                state.dailyLogs = generateMockData(); // Pre-populate with beautiful timeline visual demonstration
+                state.dailyLogs = generateMockData();
             }
             saveStateToLocalStorage();
 
@@ -299,7 +263,7 @@
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.replace('text-blue-600', 'text-slate-400'));
             document.getElementById(`btn-${tabId}`).classList.replace('text-slate-400', 'text-blue-600');
 
-            const titles = { log: 'Log Your Day', calendar: 'History & Patterns', insights: 'Your Insights', settings: 'Settings' };
+            const titles = { log: 'Log Your Day', calendar: 'History & Timeline', insights: 'Your Insights', settings: 'Settings' };
             document.getElementById('app-title').innerText = titles[tabId];
 
             if (tabId === 'calendar') {
@@ -308,7 +272,6 @@
             }
         }
 
-        // --- 4. MULTI-MODE CALENDAR SWITCHER CONTROLLER ---
         function setCalendarMode(mode) {
             activeCalendarMode = mode;
             
@@ -331,13 +294,13 @@
 
         function refreshCalendarUI() {
             if (activeCalendarMode === 'month') {
-                renderCalendar();
+                renderVerticalContinuousMonths();
             } else {
                 renderZoomableTimeline();
             }
         }
 
-        // --- 5. LOGGING LOGIC ---
+        // --- 4. LOGGER ENGINE ---
         function updateEnergyDisplay(val) {
             document.getElementById('energy-value').innerText = `${val}/10`;
         }
@@ -407,247 +370,219 @@
             renderEmotionsInLogger();
         }
 
-        // --- 6. MONTHLY MODE ENGINE ---
-        function changeMonth(direction) {
-            calendarViewDate.setMonth(calendarViewDate.getMonth() + direction);
-            renderCalendar();
-        }
+        // --- 5. APPLE-STYLE VERTICAL MONTHS ENGINE ---
+        function renderVerticalContinuousMonths() {
+            const container = document.getElementById('vertical-months-scroll');
+            container.innerHTML = '';
 
-        function renderCalendar() {
-            const grid = document.getElementById('calendar-grid');
-            const monthYearLabel = document.getElementById('calendar-month-year');
-            grid.innerHTML = '';
+            const today = new Date();
+            
+            // Render 3 consecutive months: Last Month, This Month, Next Month
+            for (let monthOffset = -1; monthOffset <= 1; monthOffset++) {
+                const targetMonthDate = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+                
+                const monthBlock = document.createElement('div');
+                monthBlock.className = "bg-white p-4 rounded-3xl shadow-sm space-y-4";
 
-            const year = calendarViewDate.getFullYear();
-            const month = calendarViewDate.getMonth();
+                // Month Header label
+                const monthHeader = document.createElement('h3');
+                monthHeader.className = "text-base font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2";
+                monthHeader.innerText = targetMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                monthBlock.appendChild(monthHeader);
 
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            monthYearLabel.innerText = `${monthNames[month]} ${year}`;
+                // Weekday Labels
+                const weekdays = document.createElement('div');
+                weekdays.className = "grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-slate-400 mb-2";
+                weekdays.innerHTML = '<span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>';
+                monthBlock.appendChild(weekdays);
 
-            const firstDayIndex = new Date(year, month, 1).getDay();
-            const totalDays = new Date(year, month + 1, 0).getDate();
+                // Grid mapping
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-7 gap-y-3 gap-x-1 justify-items-center";
 
-            for (let i = 0; i < firstDayIndex; i++) {
-                const emptyCell = document.createElement('div');
-                emptyCell.className = "h-14";
-                grid.appendChild(emptyCell);
-            }
+                const firstDayIndex = targetMonthDate.getDay();
+                const totalDays = new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() + 1, 0).getDate();
 
-            for (let day = 1; day <= totalDays; day++) {
-                const dayTile = document.createElement('div');
-                dayTile.className = "h-14 bg-slate-50 border border-slate-200/50 rounded-xl flex flex-col justify-between p-1.5 cursor-pointer active:scale-95 transition-all relative overflow-hidden";
-
-                const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const dayLogs = state.dailyLogs.filter(log => log.date.startsWith(dateString));
-
-                if (dayLogs.length > 0) {
-                    const avgEnergy = dayLogs.reduce((acc, curr) => acc + curr.energy, 0) / dayLogs.length;
-
-                    if (avgEnergy <= 3) {
-                        dayTile.className += " bg-blue-50/70 border-blue-200 text-blue-900";
-                    } else if (avgEnergy <= 6) {
-                        dayTile.className += " bg-blue-100/70 border-blue-300 text-blue-900";
-                    } else if (avgEnergy <= 8) {
-                        dayTile.className += " bg-blue-200/70 border-blue-400 text-blue-950";
-                    } else {
-                        dayTile.className += " bg-blue-300 border-blue-500 text-blue-950 font-semibold";
-                    }
-
-                    const dotsContainer = document.createElement('div');
-                    dotsContainer.className = "flex justify-center gap-1 mt-auto";
-
-                    let hasPositive = false;
-                    let hasNegative = false;
-
-                    dayLogs.forEach(log => {
-                        log.emotions.forEach(emoId => {
-                            if (emoId === 'fallback_positive') hasPositive = true;
-                            else if (emoId === 'fallback_negative') hasNegative = true;
-                            else {
-                                const found = state.userSettings.customEmotions.find(e => e.id === emoId);
-                                if (found) {
-                                    if (found.valence === 'positive') hasPositive = true;
-                                    if (found.valence === 'negative') hasNegative = true;
-                                }
-                            }
-                        });
-                    });
-
-                    if (hasPositive) {
-                        const greenDot = document.createElement('span');
-                        greenDot.className = "w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block";
-                        dotsContainer.appendChild(greenDot);
-                    }
-                    if (hasNegative) {
-                        const redDot = document.createElement('span');
-                        redDot.className = "w-1.5 h-1.5 rounded-full bg-rose-500 inline-block";
-                        dotsContainer.appendChild(redDot);
-                    }
-
-                    dayTile.appendChild(dotsContainer);
+                // Blank offsets
+                for (let i = 0; i < firstDayIndex; i++) {
+                    const empty = document.createElement('div');
+                    empty.className = "w-11 h-11";
+                    grid.appendChild(empty);
                 }
 
-                const dayNum = document.createElement('span');
-                dayNum.className = "text-xs font-bold leading-none";
-                dayNum.innerText = day;
-                dayTile.insertBefore(dayNum, dayTile.firstChild);
+                // Days
+                for (let day = 1; day <= totalDays; day++) {
+                    const dayCircle = document.createElement('div');
+                    // GORGEOUS LARGER CIRCLE STYLING
+                    dayCircle.className = "w-11 h-11 rounded-full flex flex-col items-center justify-center cursor-pointer active:scale-90 transition-all text-xs font-bold relative border border-slate-100 shadow-sm";
 
-                dayTile.onclick = () => openDayModal(dateString, dayLogs);
-                grid.appendChild(dayTile);
+                    const dateString = `${targetMonthDate.getFullYear()}-${String(targetMonthDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const dayLogs = state.dailyLogs.filter(log => log.date.startsWith(dateString));
+
+                    let borderStyle = "border-transparent";
+
+                    if (dayLogs.length > 0) {
+                        const avgEnergy = dayLogs.reduce((acc, curr) => acc + curr.energy, 0) / dayLogs.length;
+
+                        // Background coloring based on energy level
+                        if (avgEnergy <= 3) {
+                            dayCircle.className += " bg-blue-50 text-blue-900";
+                        } else if (avgEnergy <= 6) {
+                            dayCircle.className += " bg-blue-100 text-blue-900";
+                        } else if (avgEnergy <= 8) {
+                            dayCircle.className += " bg-blue-200 text-blue-950";
+                        } else {
+                            dayCircle.className += " bg-blue-300 text-blue-950";
+                        }
+
+                        // Colored ring based on logged emotions (Green = Positive, Red = Negative, Yellow = Mixed)
+                        let hasPos = false;
+                        let hasNeg = false;
+                        dayLogs.forEach(log => {
+                            log.emotions.forEach(emoId => {
+                                if (emoId === 'fallback_positive') hasPos = true;
+                                else if (emoId === 'fallback_negative') hasNeg = true;
+                                else {
+                                    const emo = state.userSettings.customEmotions.find(e => e.id === emoId);
+                                    if (emo) {
+                                        if (emo.valence === 'positive') hasPos = true;
+                                        if (emo.valence === 'negative') hasNeg = true;
+                                    }
+                                }
+                            });
+                        });
+
+                        if (hasPos && hasNeg) {
+                            dayCircle.className += " ring-2 ring-amber-400 ring-offset-1";
+                        } else if (hasPos) {
+                            dayCircle.className += " ring-2 ring-emerald-400 ring-offset-1";
+                        } else if (hasNeg) {
+                            dayCircle.className += " ring-2 ring-rose-400 ring-offset-1";
+                        }
+                    } else {
+                        dayCircle.className += " bg-slate-50 text-slate-600";
+                    }
+
+                    // Insert number inside
+                    dayCircle.innerHTML = `<span>${day}</span>`;
+                    dayCircle.onclick = () => openDayModal(dateString, dayLogs);
+                    grid.appendChild(dayCircle);
+                }
+
+                monthBlock.appendChild(grid);
+                container.appendChild(monthBlock);
             }
+
+            // Auto Scroll to current Month block position in container on opening
+            setTimeout(() => {
+                const blocks = container.children;
+                if (blocks.length > 1) {
+                    blocks[1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
         }
 
-        // --- 7. CHRONOLOGICAL TIMELINE ZOOMABLE ENGINE ---
+        // --- 6. CONTINUOUS HOURLY/DAILY TIMELINE FEED ENGINE ---
         function handleZoomChange(val) {
             currentZoomLevel = parseInt(val);
-            
-            // Adjust Label Description dynamically based on slider values
             const label = document.getElementById('zoom-label');
             if (currentZoomLevel < 25) {
-                label.innerText = "Daily View (Fully Zoomed Out)";
-            } else if (currentZoomLevel < 55) {
-                label.innerText = "Weekly View (Balanced)";
+                label.innerText = "Weekly View (Compressed)";
+            } else if (currentZoomLevel < 45) {
+                label.innerText = "Daily View (Spaced)";
             } else {
-                label.innerText = "Hourly View (Zoomed In)";
+                label.innerText = "Hourly View (Detailed)";
             }
-            
             renderZoomableTimeline();
         }
 
         function renderZoomableTimeline() {
-            const viewport = document.getElementById('timeline-rows-viewport');
-            viewport.innerHTML = '';
+            const feed = document.getElementById('continuous-timeline-feed');
+            feed.innerHTML = '';
 
-            // Generate last 7 days chronologically
-            const daysToRender = [];
-            for (let i = 6; i >= 0; i--) {
-                const tempDate = new Date();
-                tempDate.setDate(tempDate.getDate() - i);
-                daysToRender.push(tempDate);
+            // Copy all logs to avoid mutating state, then sort chronologically (Newest first)
+            const sortedLogs = [...state.dailyLogs].sort((a, b) => b.date.localeCompare(a.date));
+
+            if (sortedLogs.length === 0) {
+                feed.innerHTML = `<p class="text-center text-slate-400 text-xs py-10">No entries logged yet. Tap the Log button to start!</p>`;
+                return;
             }
 
-            daysToRender.forEach(dateObj => {
-                const year = dateObj.getFullYear();
-                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-                const day = String(dateObj.getDate()).padStart(2, '0');
-                const dateString = `${year}-${month}-${day}`;
+            // Apply dynamic gap (zoom level) between log blocks using JS style rules
+            feed.style.gap = `${currentZoomLevel}px`;
 
-                const dayLogs = state.dailyLogs.filter(log => log.date.startsWith(dateString));
-                dayLogs.sort((a, b) => a.date.localeCompare(b.date));
+            sortedLogs.forEach((log, index) => {
+                const logNode = document.createElement('div');
+                logNode.className = "flex items-center gap-6 relative group select-none transition-all duration-150";
 
-                // Create the Row Outer Grid Layout
-                const rowWrapper = document.createElement('div');
-                rowWrapper.className = "flex items-center gap-3 border-b border-slate-100 pb-2 last:border-0";
+                const logDateObj = new Date(log.date);
+                const timeString = logDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const dateLabel = logDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-                // Left Sticky Header (Date Name)
-                const stickyDateHeader = document.createElement('div');
-                stickyDateHeader.className = "w-14 shrink-0 flex flex-col";
-                const weekdayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                const dayNumName = dateObj.toLocaleDateString('en-US', { day: 'numeric' });
-                
-                stickyDateHeader.innerHTML = `
-                    <span class="text-xs font-extrabold text-slate-800">${weekdayName}</span>
-                    <span class="text-[10px] font-semibold text-slate-400">${dayNumName}</span>
-                `;
-                rowWrapper.appendChild(stickyDateHeader);
+                // Valence analysis for coloring the timeline node
+                let posCount = 0;
+                let negCount = 0;
+                let hasEmotions = false;
 
-                // Right Timeline Strip (Horizontal Scrollable)
-                const scrollableTrack = document.createElement('div');
-                scrollableTrack.className = "flex-grow overflow-x-auto no-scrollbar relative bg-slate-50 border border-slate-200/50 rounded-xl h-12 flex items-center";
-
-                // Establish the width scale of the track based on current zoom setting
-                const totalHourWidth = currentZoomLevel * 24;
-                const timelineHoursStrip = document.createElement('div');
-                timelineHoursStrip.style.width = `${totalHourWidth}px`;
-                timelineHoursStrip.className = "h-full relative shrink-0";
-
-                // Create 24 vertical thin dividing guideline ticks (only visually visible when zoomed in)
-                if (currentZoomLevel > 22) {
-                    for (let hour = 0; hour < 24; hour += 3) {
-                        const tick = document.createElement('span');
-                        tick.className = "absolute top-0 bottom-0 border-l border-slate-200/40 text-[7px] text-slate-300 pt-0.5 pl-0.5 select-none";
-                        tick.style.left = `${(hour / 24) * 100}%`;
-                        const ampmLabel = hour === 0 ? "12a" : hour === 12 ? "12p" : hour > 12 ? `${hour-12}p` : `${hour}a`;
-                        tick.innerText = ampmLabel;
-                        timelineHoursStrip.appendChild(tick);
-                    }
-                }
-
-                // Plot Logs along the 24 hour track
-                dayLogs.forEach(log => {
-                    const timePart = log.date.split('T')[1] || "00:00";
-                    const [h, m] = timePart.split(':').map(Number);
-                    const absoluteDecimalHour = h + (m / 60);
-
-                    // Compute Percentage Left relative positioning
-                    const percentLeft = (absoluteDecimalHour / 24) * 100;
-
-                    // Plot interactive visual bubble
-                    const bubble = document.createElement('button');
-                    bubble.className = "absolute -translate-x-1/2 w-7 h-7 rounded-full flex flex-col items-center justify-center font-bold text-[9px] shadow-sm border border-white/50 active:scale-95 transition-transform duration-100 top-1/2 -translate-y-1/2";
-                    
-                    // Format time indicator
-                    const displayHr = h % 12 || 12;
-                    const displayAP = h >= 12 ? 'p' : 'a';
-                    bubble.innerText = `${displayHr}${displayAP}`;
-
-                    // Determine Bubble Color Coding
-                    let posCount = 0;
-                    let negCount = 0;
-                    let hasEmotions = false;
-
-                    log.emotions.forEach(emoId => {
-                        hasEmotions = true;
-                        if (emoId === 'fallback_positive') posCount++;
-                        else if (emoId === 'fallback_negative') negCount++;
-                        else {
-                            const emo = state.userSettings.customEmotions.find(e => e.id === emoId);
-                            if (emo) {
-                                if (emo.valence === 'positive') posCount++;
-                                if (emo.valence === 'negative') negCount++;
-                            }
+                log.emotions.forEach(emoId => {
+                    hasEmotions = true;
+                    if (emoId === 'fallback_positive') posCount++;
+                    else if (emoId === 'fallback_negative') negCount++;
+                    else {
+                        const emo = state.userSettings.customEmotions.find(e => e.id === emoId);
+                        if (emo) {
+                            if (emo.valence === 'positive') posCount++;
+                            if (emo.valence === 'negative') negCount++;
                         }
-                    });
-
-                    if (!hasEmotions) {
-                        bubble.className += " bg-blue-500 text-white";
-                    } else if (posCount > 0 && negCount > 0) {
-                        bubble.className += " bg-amber-400 text-slate-900";
-                    } else if (posCount > 0) {
-                        bubble.className += " bg-emerald-500 text-white";
-                    } else if (negCount > 0) {
-                        bubble.className += " bg-rose-500 text-white";
                     }
-
-                    bubble.style.left = `${percentLeft}%`;
-                    bubble.onclick = () => openDayModal(dateString, dayLogs);
-
-                    timelineHoursStrip.appendChild(bubble);
                 });
 
-                // If no logs, show helpful message inline
-                if (dayLogs.length === 0) {
-                    const emptyTip = document.createElement('span');
-                    emptyTip.className = "absolute inset-0 flex items-center justify-center text-[10px] text-slate-300 font-semibold uppercase tracking-wider";
-                    emptyTip.innerText = "No Logs";
-                    timelineHoursStrip.appendChild(emptyTip);
-                    scrollableTrack.onclick = () => openDayModal(dateString, []);
+                let colorStyle = "bg-blue-500 text-white"; // Energy only default
+                if (hasEmotions) {
+                    if (posCount > 0 && negCount > 0) colorStyle = "bg-amber-400 text-slate-900";
+                    else if (posCount > 0) colorStyle = "bg-emerald-500 text-white";
+                    else if (negCount > 0) colorStyle = "bg-rose-500 text-white";
                 }
 
-                scrollableTrack.appendChild(timelineHoursStrip);
-                rowWrapper.appendChild(scrollableTrack);
-                viewport.appendChild(rowWrapper);
+                // 1. TIMELINE NODE (Large Circle)
+                const nodeCircle = document.createElement('div');
+                // LARGE CIRCULAR TIME-NODE STYLING
+                nodeCircle.className = `w-14 h-14 rounded-full flex flex-col items-center justify-center shrink-0 shadow-md ring-4 ring-white border border-slate-200 text-[10px] font-extrabold tracking-tight ${colorStyle} cursor-pointer active:scale-95 transition-all`;
+                nodeCircle.innerHTML = `<span>${timeString.replace(' ', '')}</span>`;
+                nodeCircle.onclick = () => openDayModal(log.date.split('T')[0], [log]);
 
-                // Auto-scroll the track to the current approximate hour so user isn't looking at "12:00 AM" if zoomed in
-                if (currentZoomLevel > 30 && dayLogs.length === 0) {
-                    const currentHour = new Date().getHours();
-                    const approxScrollPosition = ((currentHour - 3) / 24) * totalHourWidth;
-                    scrollableTrack.scrollLeft = approxScrollPosition;
-                }
+                // 2. TIMELINE DETAIL BOX
+                const detailsBox = document.createElement('div');
+                detailsBox.className = "flex-grow bg-slate-50 border border-slate-200/60 p-4 rounded-2xl flex flex-col gap-1.5 shadow-sm active:bg-slate-100 transition-colors";
+                detailsBox.onclick = () => openDayModal(log.date.split('T')[0], [log]);
+
+                // Render badge previews
+                const emotionsRow = log.emotions.map(id => {
+                    if (id === 'fallback_positive') return `<span class="bg-emerald-100 text-emerald-800 text-[9px] px-2 py-0.5 rounded-full font-bold">Deleted Pos</span>`;
+                    if (id === 'fallback_negative') return `<span class="bg-rose-100 text-rose-800 text-[9px] px-2 py-0.5 rounded-full font-bold">Deleted Neg</span>`;
+                    const emo = state.userSettings.customEmotions.find(e => e.id === id);
+                    if (emo) {
+                        const styleClass = emo.valence === 'positive' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800';
+                        return `<span class="${styleClass} text-[9px] px-2 py-0.5 rounded-full font-bold">${emo.name}</span>`;
+                    }
+                    return '';
+                }).join(' ');
+
+                detailsBox.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide">${dateLabel}</span>
+                        <span class="text-xs font-black text-blue-600">Energy: ${log.energy}/10</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1 mt-1">${emotionsRow || '<span class="text-[10px] text-slate-400">No emotions logged</span>'}</div>
+                `;
+
+                logNode.appendChild(nodeCircle);
+                logNode.appendChild(detailsBox);
+                feed.appendChild(logNode);
             });
         }
 
-        // --- 8. DETAILED TIMELINE DAY MODAL ---
+        // --- 7. DETAILED POPUP MODAL ---
         function formatTime12hr(dateTimeStr) {
             const timePart = dateTimeStr.split('T')[1];
             if (!timePart) return "Time not set";
@@ -739,7 +674,11 @@
             refreshCalendarUI();
 
             const updatedLogs = state.dailyLogs.filter(log => log.date.startsWith(dateString));
-            openDayModal(dateString, updatedLogs);
+            if (updatedLogs.length === 0) {
+                closeDayModal();
+            } else {
+                openDayModal(dateString, updatedLogs);
+            }
         }
 
         function shortcutRetroactiveLog(dateString) {
@@ -749,7 +688,7 @@
             switchTab('log');
         }
 
-        // --- 9. SETTINGS: ENGINE ---
+        // --- 8. SETTINGS ---
         function renderEmotionsInSettings() {
             const settingsList = document.getElementById('settings-emotions-list');
             settingsList.innerHTML = '';
