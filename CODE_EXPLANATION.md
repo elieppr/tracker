@@ -1,6 +1,6 @@
-# LifeSync Tracker — Code Overview (V3)
+# LifeSync Tracker — Code Overview (V4)
 
-A walkthrough of what the codebase currently does, file by file and section by section. Reflects the **V3 refactor**: per-entry data model, channel picker, continuous-flow calendar, category-tinted timeline, and the warm Honey/Cream palette.
+A walkthrough of what the codebase currently does, file by file and section by section. Reflects the **V4 refactor**: a thin UI/feature layer built on top of **V3** (per-entry data model, channel picker, continuous-flow calendar, warm Honey/Cream palette). V4 introduces theme + accent personalisation, a Kanban timeline mode, two new Insights charts, a date-range filter, and a few targeted visual polish passes.
 
 ## What the App Is
 
@@ -8,15 +8,15 @@ A walkthrough of what the codebase currently does, file by file and section by s
 
 Project files:
 
-| File                    | Purpose                                                                        |
-|-------------------------|--------------------------------------------------------------------------------|
-| `index.html`            | DOM shell: header, five-log/save-bar, four views, modal, bottom nav             |
-| `styles.css`            | Warm palette CSS variables + phone-first safe-area utilities + cat-* tints     |
-| `app.js`                | All behaviour in 9 numbered sections; ~1110 lines                              |
-| `manifest.json`         | PWA manifest (standalone display, iPhone installable)                          |
-| `serve.sh`              | Tiny local dev-server wrapper (autopicks `python3` / `python` / `npx` / `php`) |
-| `README.md`             | Overview + Run-locally guide + cache-busting tips                              |
-| `project_Description.md`| The PRD (V3) this app is built against                                         |
+| File                    | Purpose                                                                                 |
+|-------------------------|-----------------------------------------------------------------------------------------|
+| `index.html`            | DOM shell: header, log/save-bar, four views, modal, bottom nav, head preload script     |
+| `styles.css`            | Warm palette variables + safe-area utilities + cat-* tints + theme variants + kanban   |
+| `app.js`                | All behaviour in 11 numbered sections; ~1576 lines                                       |
+| `manifest.json`         | PWA manifest (standalone display, iPhone installable)                                   |
+| `serve.sh`              | Tiny local dev-server wrapper (autopicks `python3` / `python` / `npx` / `php`)          |
+| `README.md`             | Project overview + Run-locally guide + cache-busting tips                               |
+| `project_Description.md`| The PRD (V4) this app is built against                                                  |
 
 Styling is mostly Tailwind CSS loaded from a CDN script tag in `index.html`; `styles.css` provides the small set of CSS variables and utility classes Tailwind doesn't know about (`pt-safe`, `pb-safe`, `cat-*`, `shadow-soft`, `.ios-card`).
 
@@ -24,7 +24,7 @@ Styling is mostly Tailwind CSS loaded from a CDN script tag in `index.html`; `st
 
 ## `app.js` — The Whole App
 
-`app.js` is structured into nine numbered sections. Below is what each one currently does.
+`app.js` is structured into eleven numbered sections. Below is what each one currently does.
 
 ### 1. Default Datasets & State
 
@@ -72,9 +72,18 @@ The Log view splits the V2 single-form "fill-everything-and-save" into a channel
 - **`renderActivitiesInLogger()`** — multi-select pills, dusty-blue solid (`#7C9CB1`) on select.
 - **`saveCurrentLog()`** — the heart of V3. Reads the *visible panel only* and writes **one discrete entry** to `state.dailyLogs`. For multi-select panels (emotion / activity) it expands into one entry per selected item, all stamped with the same date+time. After save, it briefly flips the Save button to "✓ Saved" with a sage-green background and resets the channel-specific input (energy slider back to 5, notes textarea cleared). The date input is preserved so the user can rapid-fire multiple logs at the same instant.
 
-### 5. Continuous Calendar Engine (V3)
+### 5. Continuous Calendar Engine (V3; refined in V4)
 
 Replaces the V2 stacked-month renderer. One uninterrupted 7-col grid that crosses month boundaries with no section breaks.
+
+* **V4 grid styling** — the `renderContinuousCalendar` function appends `.apple-grid` to the grid div, then for each cell computes two indexing metrics:
+  * `weekIndex = Math.floor(gridIndex / 7)` — used to assign `.cal-row-stripe` to every other week-row (zebra striping).
+  * `gridIndex % 7` — Saturday cells (column index 6, since grid starts from Sunday) get `.cal-col-rule` for a faint vertical rule.
+* Under the dim-warm theme the striping is overridden to a lighter tone so it works on dark backgrounds.
+
+### 6b. Timeline FOV fix (V4 minor)
+
+`renderSeamlessTimeline` reduced `TIME_GUTTER` from 64 px to **40 px** so each entry card gets ~24 px more horizontal space. `THREAD_X` is recomputed as `TIME_GUTTER + NODE_COL/2 = 52` so the thread still lines up with each node's centre. The thread body was also widened (var(--ls-bg-deep) token, theme-aware).
 
 Constants pulled out of the loop:
 - `CAL_RANGE_BACK_MONTHS = 2`, `CAL_RANGE_FWD_MONTHS = 3` — total span.
@@ -104,9 +113,9 @@ Constants pulled out of the loop:
 
 This avoids using a `scroll` handler + `offsetTop` reads, which would force synchronous layout on every scroll frame.
 
-### 6. Continuous Timeline Engine (V3 — Category Ribbons)
+### 6. Continuous Timeline Engine (V3 — Category Ribbons; refined in V4)
 
-Replaces the V2 per-day-card renderer with a real per-entry stream that paints vertical "ribbons" of colour as the user scrolls.
+The History view offers **two timeline modes** selected via the mode-switcher. `renderSeamlessTimeline` is the existing vertical-feed renderer (V3). `renderKanbanTimeline` is the V4 5-lane column renderer.
 
 **`renderSeamlessTimeline()`** — feed container setup:
 
@@ -168,7 +177,6 @@ Three list renderers (`renderEmotionsInSettings`, `renderSymptomsInSettings`, `r
 ## Helpers (the trailing block in `app.js`)
 
 - `classifyEmotion(id)` / `classifySymptom(id)` / `classifyActivity(id)` — resolve an id back to `{ id, name, valence? }` (or to its fallback label). The fallbacks have their own `deleted: true` flag in case a renderer ever needs to visualize them differently.
-- `summarizeDay(dayLogs)` — currently a no-op backwards-compat stub kept so any inline callsite resolves. Returns `{ hasPos: false, hasNeg: false, hasWarn: false }`.
 - `escapeHtml(str)` — minimum-viable HTML escape for user-supplied names before they land in `innerHTML`.
 
 ---

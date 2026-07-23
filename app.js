@@ -1,19 +1,21 @@
 // =============================================================================
 // LifeSync Tracker - app.js
-// V3: per-entry data model. Each Save produces ONE record of a single channel
-// (energy / emotion / symptom / activity / note). Calendar flows continuously
-// with a single sticky month label updated via IntersectionObserver. Timeline
-// shows one row per entry with type-specific formatting.
+// V4: data model unchanged (per-entry flat array). UI adds: theme picker,
+// accent picker, Kanban timeline mode (5-lane scroll-snap), behavioral
+// correlation grid, symptom co-occurrence chart, insights date-range
+// filter, calendar zebra row striping + column rules, reduced timeline
+// time gutter (64 -> 40 px).
 // Sections:
 //   1. Default datasets & state
-//   2. Initialization (incl. V2 -> V3 data migration)
+//   2. Initialization (incl. V2 -> V3 data migration + V3 -> V4 prefs)
 //   3. Navigation controller
 //   4. Logger engine (channel picker + per-channel forms)
-//   5. Continuous calendar engine (sticky month label via IntersectionObserver)
-//   6. Timeline engine (per-entry rows)
+//   5. Continuous calendar engine (sticky month label + zebra + rules)
+//   6. Timeline engine (list + kanban modes)
 //   7. Day modal engine (per-day entries as slim rows)
 //   8. Settings engine (emotions / symptoms / activities)
-//   9. Insights engine (Energy-Over-Time SVG chart, type-filtered summary)
+//   8b. Appearance engine (theme + accent picker, V4)
+//   9. Insights engine (trend chart + behavioral correlation + co-occurrence + summary)
 // =============================================================================
 
 // --- 1. DEFAULT DATASETS & STATE ---------------------------------------------
@@ -52,6 +54,14 @@ const FALLBACK_LABEL = {
 // Warm Honey/Cream severity palette. These pairs are: tailwind/bg-class for the
 // solid-card button (SEVERITY_COLOR) and CSS variable foreground for the
 // text-only chips in the timeline + modal (SEVERITY_TEXT_COLOR).
+// V4: curated theme + accent catalogues. Order / option flags drive the
+// rendering order in Settings. Adding a palette = add a [data-theme] block
+// in styles.css + append here.
+const THEMES        = ['warm-cream', 'soft-paper', 'dim-warm'];
+const ACCENT_NAMES  = ['terracotta', 'sage', 'mocha', 'ink', 'blush'];
+const DEFAULT_THEME = 'warm-cream';
+const DEFAULT_ACCENT= 'terracotta';
+
 const SEVERITY_COLOR = {
     mild:     "bg-[#F1D88A] text-[#3D3548]",
     moderate: "bg-[#E89C5B] text-white border border-[#B47A3C]",
@@ -130,11 +140,13 @@ let state = {
     userSettings: {
         customEmotions:   [],
         customSymptoms:   [],
-        customActivities: []
+        customActivities: [],
+        preferences:      { theme: DEFAULT_THEME, accent: DEFAULT_ACCENT, insightsRange: 'all' }
     },
     dailyLogs: []
 };
 let activeCalendarMode = 'month';
+let insightsRange      = 'all';   // mirror of state.userSettings.preferences.insightsRange
 
 // --- 2. INITIALIZATION --------------------------------------------------------
 
@@ -164,6 +176,15 @@ window.addEventListener('load', () => {
         state.meta.seeded = true;
     }
 
+    // V3 -> V4 preferences migration. Idempotent via meta.migratedToV4.
+    if (!state.meta.migratedToV4) {
+        if (!state.userSettings.preferences) state.userSettings.preferences = {};
+        if (!THEMES.includes(state.userSettings.preferences.theme))        state.userSettings.preferences.theme = DEFAULT_THEME;
+        if (!ACCENT_NAMES.includes(state.userSettings.preferences.accent)) state.userSettings.preferences.accent = DEFAULT_ACCENT;
+        if (!['7d','30d','90d','all'].includes(state.userSettings.preferences.insightsRange)) state.userSettings.preferences.insightsRange = 'all';
+        state.meta.migratedToV4 = true;
+    }
+
     // V2 -> V3 migration. V2 entries are aggregated daily cards; we explode
     // each into one entry per channel, preserving date+time stamp.
     if (!state.meta.migratedToV3) {
@@ -191,9 +212,15 @@ window.addEventListener('load', () => {
         state.meta.migratedToV3 = true;
     }
 
+    insightsRange = state.userSettings.preferences.insightsRange;
+    applyTheme(state.userSettings.preferences.theme);
+    applyAccent(state.userSettings.preferences.accent);
+
     saveStateToLocalStorage();
     renderLogger();
     renderSettings();
+    bindAppearanceSwatches();
+    bindInsightsRangeChips();
 });
 
 function resetLogDatePicker() {
@@ -248,25 +275,37 @@ function setCalendarMode(mode) {
     activeCalendarMode = mode;
     document.getElementById('calendar-month-container').classList.add('hidden');
     document.getElementById('calendar-timeline-container').classList.add('hidden');
+    // Day mode (V4.1) shares the timeline-style container with Kanban + List.
+    document.getElementById('btn-mode-month').className    = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
+    document.getElementById('btn-mode-timeline').className = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
+    document.getElementById('btn-mode-day').className      = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
+    document.getElementById('btn-mode-kanban').className   = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
 
-    const baseCls = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
-    document.getElementById('btn-mode-month').className    = baseCls;
-    document.getElementById('btn-mode-timeline').className = baseCls;
-
-    const activeCls = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm";
+    const activeCls = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm";
     if (mode === 'month') {
         document.getElementById('calendar-month-container').classList.remove('hidden');
         document.getElementById('btn-mode-month').className = activeCls;
-    } else {
+        renderContinuousCalendar();
+    } else if (mode === 'timeline') {
         document.getElementById('calendar-timeline-container').classList.remove('hidden');
         document.getElementById('btn-mode-timeline').className = activeCls;
+        renderSeamlessTimeline();
+    } else if (mode === 'day') {
+        document.getElementById('calendar-timeline-container').classList.remove('hidden');
+        document.getElementById('btn-mode-day').className = activeCls;
+        renderDayTimeline();
+    } else if (mode === 'kanban') {
+        document.getElementById('calendar-timeline-container').classList.remove('hidden');
+        document.getElementById('btn-mode-kanban').className = activeCls;
+        renderKanbanTimeline();
     }
-    refreshCalendarUI();
 }
 
 function refreshCalendarUI() {
-    if (activeCalendarMode === 'month') renderContinuousCalendar();
-    else                                renderSeamlessTimeline();
+    if (activeCalendarMode === 'month')           renderContinuousCalendar();
+    else if (activeCalendarMode === 'timeline')   renderSeamlessTimeline();
+    else if (activeCalendarMode === 'day')        renderDayTimeline();
+    else if (activeCalendarMode === 'kanban')     renderKanbanTimeline();
 }
 
 // --- 4. LOGGER ENGINE ---------------------------------------------------------
@@ -378,10 +417,6 @@ function clearSeverityBtn(btn) {
 function renderActivitiesInLogger() {
     const cont = document.getElementById('activities-list');
     cont.innerHTML = '';
-    if (state.userSettings.customActivities.length === 0) {
-        cont.innerHTML = '<p class="text-xs text-slate-400 italic">Add an activity in Settings.</p>';
-        return;
-    }
     state.userSettings.customActivities.forEach(act => {
         const button = document.createElement('button');
         button.type = 'button';
@@ -403,6 +438,7 @@ function renderActivitiesInLogger() {
         cont.appendChild(button);
     });
 }
+
 
 // Save = one discrete entry per channel. Multi-select channels (emotion /
 // activity) expand into multiple parallel entries, all stamped at the same
@@ -482,9 +518,10 @@ function renderContinuousCalendar() {
     end.setDate(end.getDate() + (6 - end.getDay()));
 
     const grid = document.createElement('div');
-    grid.className = "grid grid-cols-7 gap-x-1 gap-y-3 justify-items-center mt-1 px-1";
+    grid.className = "grid grid-cols-7 gap-x-1 gap-y-3 justify-items-center mt-1 px-1 apple-grid";
 
     const d = new Date(start);
+    let gridIndex = 0;
     while (d <= end) {
         const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         const dayLogs = state.dailyLogs.filter(l => l.date.startsWith(dateStr));
@@ -494,9 +531,16 @@ function renderContinuousCalendar() {
         cell.dataset.month = d.getMonth();
         cell.dataset.year  = d.getFullYear();
         cell.dataset.day   = d.getDate();
+        // V4 grid styling:
+        //   - cal-row-stripe: zebra background every other VISIBLE week-row (14 cells)
+        //   - cal-col-rule:   subtle right-rule between weekend cells (Sat)
+        const weekIndex = Math.floor(gridIndex / 7);
+        if (weekIndex % 2 === 1) cell.classList.add('cal-row-stripe');
+        if (gridIndex % 7 === 6) cell.classList.add('cal-col-rule');
         grid.appendChild(cell);
 
         d.setDate(d.getDate() + 1);
+        gridIndex++;
     }
 
     container.appendChild(grid);
@@ -646,15 +690,14 @@ function renderSeamlessTimeline() {
         return;
     }
 
-    // Geometry constants for the row grid below. Each row uses
-    // grid-cols-[TIME_GUTTER_px, NODE_COL_px, 1fr]. The thread is drawn at
-    // THREAD_X = TIME_GUTTER + NODE_COL/2 so it lines up with each node's centre.
-    const TIME_GUTTER = 64;
+    // Geometry constants for the row grid below (V4: TIME_GUTTER 64 -> 40 px
+    // so each card gets more horizontal space; THREAD_X recomputed accordingly).
+    const TIME_GUTTER = 40;
     const NODE_COL    = 24;
-    const THREAD_X    = TIME_GUTTER + NODE_COL / 2;   // 76
+    const THREAD_X    = TIME_GUTTER + NODE_COL / 2;   // 52
 
     const thread = document.createElement('div');
-    thread.className = "absolute top-3 bottom-0 w-[2px] bg-[#ECE3D0] z-0";
+    thread.className = "absolute top-3 bottom-0 w-[2px] bg-[var(--ls-bg-deep)] z-0";
     thread.style.left = `${THREAD_X}px`;
     feed.appendChild(thread);
 
@@ -684,7 +727,7 @@ function renderSeamlessTimeline() {
         // room so the eye reads each card as a discrete slab rather than a
         // continuous stream of uniform boxes.
         const entry = document.createElement('div');
-        entry.className = "grid grid-cols-[64px_24px_1fr] gap-x-2 pt-4 pb-3 cursor-pointer active:scale-[0.99] transition-transform items-start";
+        entry.className = `grid grid-cols-[${TIME_GUTTER}px_${NODE_COL}px_1fr] gap-x-2 pt-4 pb-3 cursor-pointer active:scale-[0.99] transition-transform items-start`;
         entry.onclick = () => openDayModal(dateOnly, [log]);
 
         // Time gutter.
@@ -776,6 +819,8 @@ function energyNodeColor(energy) {
     if (energy <= 9) return "#D89B5C"; // accent terracotta
     return "#C44033";                  // peak (10/10) - warm brick red
 }
+
+// --- 9. INSIGHTS ENGINE -------------------------------------------------------
 
 // --- 7. DAY MODAL ENGINE ------------------------------------------------------
 
@@ -1016,17 +1061,33 @@ function resetAllData() {
 // --- 9. INSIGHTS ENGINE -------------------------------------------------------
 
 function renderInsights() {
+    updateRangeChipsUI();
+    // V4.1: clear the chart container ONCE before re-rendering so toggling a
+    // range chip doesn't stack duplicate cards. Each chart appends its own.
+    const charts = document.getElementById('insights-charts');
+    if (charts) charts.innerHTML = '';
     renderEnergyTrendChart();
+    renderTopInfluencers();
+    renderCalendarSeverityMap();
+    renderMultiAxisChart();
+    renderBehavioralCorrelationGrid();
+    renderSymptomCooccurrenceChart();
+    renderDayOfWeekChart();
     renderInsightSummary();
 }
 
 function renderEnergyTrendChart() {
-    const container = document.getElementById('insights-chart-container');
-    container.innerHTML = '';
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
 
-    const energyEntries = state.dailyLogs.filter(l => l.type === 'energy');
+    const energyEntries = applyDateRangeFilter(state.dailyLogs).filter(l => l.type === 'energy');
     if (energyEntries.length === 0) {
-        container.innerHTML = '<p class="text-center text-[#A0876A] py-8 text-sm">Log an energy entry to see your trend.</p>';
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Energy Over Time</p>
+                <p class="text-[var(--ls-ink-soft)] text-center py-6 text-sm">Log an energy entry to see your trend.</p>
+            </div>
+        `);
         return;
     }
 
@@ -1064,35 +1125,341 @@ function renderEnergyTrendChart() {
 
     // Warm terracotta line + peach fill. Stroke uses --ls-accent-deep so it
     // reads cleanly against the cream card.
-    container.innerHTML = `
-        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="w-full h-auto">
-            <defs>
-                <linearGradient id="energyFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"  stop-color="#D89B5C" stop-opacity="0.35"/>
-                    <stop offset="100%" stop-color="#D89B5C" stop-opacity="0"/>
-                </linearGradient>
-            </defs>
-            ${[1, 5, 10].map(energy => {
-                const y = yFor(energy);
-                return `
-                    <line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#ECE3D0" stroke-width="1"/>
-                    <text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="10" fill="#A0876A" font-weight="700">${energy}</text>
-                `;
-            }).join('')}
-            <path d="${fillD}" fill="url(#energyFill)"/>
-            <path d="${pathD}" fill="none" stroke="#B47A3C" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"/>
-            ${points.map(p => `<circle cx="${xFor(p.ts).toFixed(1)}" cy="${yFor(p.energy).toFixed(1)}" r="4" fill="#D89B5C" stroke="#FAF6EE" stroke-width="2.5"/>`).join('')}
-            ${axisLabels}
-        </svg>
-    `;
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Energy Over Time</p>
+            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="w-full h-auto">
+                <defs>
+                    <linearGradient id="energyFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"  stop-color="#D89B5C" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#D89B5C" stop-opacity="0"/>
+                    </linearGradient>
+                </defs>
+                ${[1, 5, 10].map(energy => {
+                    const y = yFor(energy);
+                    return `
+                        <line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#ECE3D0" stroke-width="1"/>
+                        <text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="10" fill="#A0876A" font-weight="700">${energy}</text>
+                    `;
+                }).join('')}
+                <path d="${fillD}" fill="url(#energyFill)"/>
+                <path d="${pathD}" fill="none" stroke="#B47A3C" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"/>
+                ${points.map(p => `<circle cx="${xFor(p.ts).toFixed(1)}" cy="${yFor(p.energy).toFixed(1)}" r="4" fill="#D89B5C" stroke="#FAF6EE" stroke-width="2.5"/>`).join('')}
+                ${axisLabels}
+            </svg>
+        </div>
+    `);
+}
+
+// --- 9b. TOP 3 INFLUENCERS (V4.1) --------------------------------------------
+// For each custom tag (activities + emotions), compute the mean of each daily
+// target metric (avg energy, worst symptom severity, mood polarity) on days
+// WITH the tag vs WITHOUT, then rank by absolute delta (forgiving small day
+// counts so we surface even sparse patterns, while still requiring min 3 days
+// on each side).
+function severityScore(sev) {
+    return sev === 'severe' ? 3 : sev === 'moderate' ? 2 : sev === 'mild' ? 1 : 0;
+}
+function dayTargetAvg(rec, targetKey) {
+    if (targetKey === 'energy') {
+        if (!rec.energy.length) return null;
+        return rec.energy.reduce((s, v) => s + v, 0) / rec.energy.length;
+    }
+    if (targetKey === 'syms') {
+        if (!rec.syms.length) return null;
+        return rec.syms.reduce((s, v) => Math.max(s, v), 0);
+    }
+    if (targetKey === 'emos') {
+        if (!rec.emos.length) return null;
+        const polarity = rec.emos.map(e => classifyEmotion(e).valence === 'positive' ? 1 : -1);
+        return polarity.reduce((s, v) => s + v, 0) / polarity.length;
+    }
+    return null;
+}
+function computeTagDelta(daysArr, channelKey, tagId, targetKey) {
+    let withSum = 0, withN = 0, withoutSum = 0, withoutN = 0;
+    daysArr.forEach(([day, rec]) => {
+        const v = dayTargetAvg(rec, targetKey);
+        if (v === null) return;
+        const hasTag = channelKey === 'acts'  ? rec.acts.includes(tagId)
+                     : channelKey === 'emos' ? rec.emos.includes(tagId)
+                     : false;
+        if (hasTag) { withSum += v; withN++; } else { withoutSum += v; withoutN++; }
+    });
+    const withAvg    = withN    > 0 ? withSum    / withN    : null;
+    const withoutAvg = withoutN > 0 ? withoutSum / withoutN : null;
+    const delta      = (withAvg !== null && withoutAvg !== null) ? withAvg - withoutAvg : 0;
+    return { delta, nWith: withN, nWithout };
+}
+function renderTopInfluencers() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    // Build per-day aggregates.
+    const dayMap = new Map();
+    scoped.forEach(l => {
+        const d = l.date.split('T')[0];
+        if (!dayMap.has(d)) dayMap.set(d, { energy: [], syms: [], acts: [], emos: [] });
+        const r = dayMap.get(d);
+        if (l.type === 'energy')   r.energy.push(l.value);
+        if (l.type === 'symptom')  r.syms.push(severityScore(l.severity));
+        if (l.type === 'activity') r.acts.push(l.value);
+        if (l.type === 'emotion')  r.emos.push(l.value);
+    });
+    const daysArr = [...dayMap.entries()];
+    if (daysArr.length < 3) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Top 3 Influencers</p>
+                <p class="text-[var(--ls-ink-soft)] text-center py-6 text-sm">Need at least 3 days of data to spot patterns. Keep going!</p>
+            </div>`);
+        return;
+    }
+    const tagChannels = [
+        { type: 'activities', key: 'acts',  list: state.userSettings.customActivities, label: 'Activity' },
+        { type: 'emotions',   key: 'emos',  list: state.userSettings.customEmotions,   label: 'Emotion'  }
+    ];
+    const targets = [
+        { key: 'energy', label: 'Energy',     fmt: v => v.toFixed(1) + ' pts',  goodPolarity: 'up' },
+        { key: 'syms',   label: 'Symptoms',   fmt: v => v.toFixed(2),           goodPolarity: 'down' },
+        { key: 'emos',   label: 'Positivity', fmt: v => (v * 100).toFixed(0) + '%', goodPolarity: 'up' }
+    ];
+    const influences = [];
+    tagChannels.forEach(ch => {
+        ch.list.forEach(tag => {
+            targets.forEach(t => {
+                const { delta, nWith, nWithout } = computeTagDelta(daysArr, ch.key, tag.id, t.key);
+                if (nWith >= 3 && nWithout >= 3 && Number.isFinite(delta)) {
+                    influences.push({ tag: tag.name, target: t.label, delta, fmt: t.fmt(delta), polarity: t.goodPolarity, n: nWith, total: daysArr.length });
+                }
+            });
+        });
+    });
+    influences.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    const top3 = influences.slice(0, 3);
+    if (top3.length === 0) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Top 3 Influencers</p>
+                <p class="text-[var(--ls-ink-soft)] text-center py-6 text-sm">No clear pattern found yet — try logging more energy/mood alongside your tags.</p>
+            </div>`);
+        return;
+    }
+    const cards = top3.map(inf => {
+        const dir = inf.polarity === 'up'
+            ? (inf.delta >  0.1 ? 'up'   : inf.delta < -0.1 ? 'down' : 'flat')
+            : (inf.delta < -0.1 ? 'up'   : inf.delta >  0.1 ? 'down' : 'flat');
+        const sign = inf.delta > 0 ? '+' : '';
+        return `
+            <div class="influencer-card">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="influencer-tag">${escapeHtml(inf.tag)}</span>
+                    <span class="influencer-arrow">→</span>
+                    <span class="influencer-target">${escapeHtml(inf.target)}</span>
+                </div>
+                <div class="flex items-baseline">
+                    <span class="influencer-delta ${dir}">${sign}${escapeHtml(inf.fmt)}</span>
+                    <span class="influencer-unit">vs days without</span>
+                </div>
+                <div class="influencer-n">Found on ${inf.n} of ${inf.total} days</div>
+            </div>`;
+    }).join('');
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-3">Top 3 Influencers</p>
+            <div class="influencer-rail">${cards}</div>
+        </div>`);
+}
+
+// --- 9c. CALENDAR SEVERITY MAP (V4.1) ---------------------------------------
+// 6-week grid. Each day is colored by the WORST symptom severity logged that
+// day; non-symptom days are cream; days with no data are transparent.
+function renderCalendarSeverityMap() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = [];
+    for (let i = 41; i >= 0; i--) {
+        const d = new Date(today); d.setDate(d.getDate() - i);
+        days.push(d.toISOString().split('T')[0]);
+    }
+    const buckets = new Map();
+    scoped.forEach(l => {
+        const day = l.date.split('T')[0];
+        if (!buckets.has(day)) buckets.set(day, { worst: 0, anyData: false });
+        const b = buckets.get(day);
+        if (l.type === 'symptom') {
+            const s = severityScore(l.severity);
+            if (s > b.worst) b.worst = s;
+            b.anyData = true;
+        } else if (l.type !== 'note') {
+            b.anyData = true;
+        }
+    });
+    const cells = days.map(d => {
+        const b = buckets.get(d);
+        const num = parseInt(d.split('-')[2], 10);
+        let cls = 'empty';
+        if (b && b.anyData) {
+            cls = b.worst === 3 ? 'severe' : b.worst === 2 ? 'moderate' : b.worst === 1 ? 'mild' : 'clear';
+        }
+        return `<div class="heatmap-cell ${cls}" onclick="openDayModal('${d}', state.dailyLogs.filter(l => l.date.startsWith('${d}')))"><span class="day-num">${num}</span></div>`;
+    }).join('');
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-3">Symptom Severity — Last 6 Weeks</p>
+            <div class="heatmap-grid">${cells}</div>
+            <div class="heatmap-legend">
+                <span><span class="swatch" style="background:#F1D88A"></span>Mild</span>
+                <span><span class="swatch" style="background:#E89C5B"></span>Mod</span>
+                <span><span class="swatch" style="background:#C44033"></span>Severe</span>
+                <span><span class="swatch" style="background:transparent;border:1px solid var(--ls-bg-deep)"></span>None</span>
+            </div>
+        </div>`);
+}
+
+// --- 9d. MULTI-AXIS PARALLEL CHART (V4.1) ------------------------------------
+// Four normalized channels (energy 1-10, mood -1..+1, symptom 0..3, activity
+// count 0..maxN) plotted on the same time axis. Each line uses min-max scaling
+// so disparate scales share the visual canvas. Tap a point to "scrub" the
+// legend pill at the top to that day's raw values.
+function renderMultiAxisChart() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    if (scoped.length === 0) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Parallel Channels</p>
+                <p class="text-[var(--ls-ink-soft)] text-center py-6 text-sm">Log energy, mood, symptoms, and activities to compare them on one timeline.</p>
+            </div>`);
+        return;
+    }
+    const dayMap = new Map();
+    scoped.forEach(l => {
+        const day = l.date.split('T')[0];
+        if (!dayMap.has(day)) dayMap.set(day, { ts: new Date(day + 'T12:00').getTime(), energy: null, sym: 0, mood: null, acts: 0 });
+        const r = dayMap.get(day);
+        if (l.type === 'energy')   r.energy = (r.energy == null) ? l.value : (r.energy + l.value) / 2;
+        if (l.type === 'symptom')  r.sym = Math.max(r.sym, severityScore(l.severity));
+        if (l.type === 'emotion')  {
+            const v = classifyEmotion(l.value).valence === 'positive' ? 1 : -1;
+            r.mood = (r.mood == null) ? v : (r.mood + v) / 2;
+        }
+        if (l.type === 'activity') r.acts += 1;
+    });
+    const days = Array.from(dayMap.values()).sort((a, b) => a.ts - b.ts);
+    const n = days.length;
+    const W = 350, H = 160, padL = 14, padR = 14, padT = 8, padB = 20;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const xFor = i => n <= 1 ? padL + plotW / 2 : padL + (i / (n - 1)) * plotW;
+    const yFor = v => padT + (1 - v) * plotH;
+    function normalize(arr, lo, hi) {
+        if (hi === lo) return arr.map(v => v === null ? null : 0.5);
+        return arr.map(v => v === null ? null : (v - lo) / (hi - lo));
+    }
+    const eRaw = days.map(d => d.energy);
+    const mRaw = days.map(d => d.mood == null ? null : d.mood + 1); // -1..+1 -> 0..2
+    const sRaw = days.map(d => d.sym);
+    const aRaw = days.map(d => d.acts);
+    const aMax = Math.max(3, ...aRaw);
+    const eN = normalize(eRaw, 1, 10);
+    const mN = normalize(mRaw, 0, 2);
+    const sN = normalize(sRaw, 0, 3);
+    const aN = normalize(aRaw, 0, aMax);
+    function pathD(arr) {
+        const parts = [];
+        let pen = true;
+        arr.forEach((v, i) => {
+            if (v === null) { pen = true; return; }
+            parts.push(`${pen ? 'M' : 'L'}${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`);
+            pen = false;
+        });
+        return parts.join(' ') || 'M0,0';
+    }
+    const lastIdx = n - 1;
+    const ld = days[lastIdx];
+    function fmtMood(m) { return m == null ? '–' : (m > 0 ? '+' : '') + m.toFixed(2); }
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-3">Parallel Channels — Across Time</p>
+            <div class="parallel-card" style="border:none;padding:0;">
+                <div class="parallel-legend">
+                    <div class="pl-i"><span class="pl-label">Energy</span><span class="pl-val" style="color:#D89B5C">${ld.energy == null ? '–' : ld.energy.toFixed(0) + '/10'}</span></div>
+                    <div class="pl-i"><span class="pl-label">Mood</span><span class="pl-val" style="color:#7E9A6B">${fmtMood(ld.mood)}</span></div>
+                    <div class="pl-i"><span class="pl-label">Symptom</span><span class="pl-val" style="color:#C44033">${ld.sym > 0 ? ld.sym : '–'}</span></div>
+                    <div class="pl-i"><span class="pl-label">Activity</span><span class="pl-val" style="color:#A0876A">${ld.acts}</span></div>
+                </div>
+                <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="parallel-chart-svg">
+                    <line x1="${padL}" y1="${padT + plotH / 2}" x2="${W - padR}" y2="${padT + plotH / 2}" stroke="#ECE3D0" stroke-width="1" stroke-dasharray="3 3"/>
+                    <path class="parallel-line" stroke="#D89B5C" d="${pathD(eN)}"/>
+                    <path class="parallel-line" stroke="#7E9A6B" d="${pathD(mN)}"/>
+                    <path class="parallel-line" stroke="#C44033" d="${pathD(sN)}"/>
+                    <path class="parallel-line" stroke="#A0876A" d="${pathD(aN)}"/>
+                </svg>
+            </div>
+        </div>`);
+}
+
+// --- 9e. DAY-OF-WEEK PATTERN (V4.1) ------------------------------------------
+// 7 vertical bars (Sun..Sat), each = avg energy on that weekday. Peak bar gets
+// the accent color; bars below a dashed baseline (grand avg) are dimmed.
+function renderDayOfWeekChart() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    if (scoped.length === 0) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-2">Day-of-Week Pattern</p>
+                <p class="text-[var(--ls-ink-soft)] text-center py-6 text-sm">Log entries on different weekdays to spot patterns.</p>
+            </div>`);
+        return;
+    }
+    const energyByDow = [[], [], [], [], [], [], []]; // 0=Sun..6=Sat
+    scoped.forEach(l => {
+        if (l.type !== 'energy') return;
+        energyByDow[new Date(l.date).getDay()].push(l.value);
+    });
+    const avgs = energyByDow.map(arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+    const peakIdx = avgs.indexOf(Math.max(...avgs));
+    const grandAvg = avgs.reduce((s, v) => s + v, 0) / 7;
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const bars = avgs.map((avg, i) => {
+        const heightPct = avg > 0 ? (avg / 10) * 100 : 4;
+        const cls = i === peakIdx && avg > 0 ? 'peak'
+                  : avg < grandAvg - 0.5 ? 'low'
+                  : 'flat';
+        const val = avg > 0 ? avg.toFixed(1) : '–';
+        return `
+            <div class="dow-col">
+                <span class="dow-val">${val}</span>
+                <div class="dow-bar ${cls}" style="height:${heightPct.toFixed(0)}%"></div>
+                <span class="dow-label">${labels[i]}</span>
+            </div>`;
+    }).join('');
+    // Drop the old absolute-positioned baseline line — it was misaligned
+    // because each bar sits below a `.dow-val` text label whose height ate
+    // column space. Use a clear "Avg" pill below the chart instead (no
+    // positioning math, easier to scan).
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-3">Day-of-Week Pattern — Avg Energy</p>
+            <div class="dow-chart">${bars}</div>
+            <p class="text-center text-[12px] font-bold text-[var(--ls-ink-mute)] mt-2">
+                All-weekday average: <span style="color:var(--ls-accent)">${grandAvg.toFixed(1)}/10</span>
+            </p>
+        </div>`);
 }
 
 function renderInsightSummary() {
     const box = document.getElementById('insights-summary');
-    if (state.dailyLogs.length === 0) { box.innerHTML = ''; return; }
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    if (scoped.length === 0) { box.innerHTML = '<p class="text-[var(--ls-ink-mute)] text-sm col-span-2 text-center py-4">No entries in this range.</p>'; return; }
 
-    const energyEnts = state.dailyLogs.filter(l => l.type === 'energy');
-    const emotionEnts = state.dailyLogs.filter(l => l.type === 'emotion');
+    const energyEnts = scoped.filter(l => l.type === 'energy');
+    const emotionEnts = scoped.filter(l => l.type === 'emotion');
 
     const energyDayMap = new Map();
     energyEnts.forEach(l => {
@@ -1105,7 +1472,7 @@ function renderInsightSummary() {
         group.reduce((s, l) => s + l.value, 0) / group.length);
     const avg = dayAvgs.length > 0 ? dayAvgs.reduce((s, e) => s + e, 0) / dayAvgs.length : 0;
 
-    const daysWithData = new Set(state.dailyLogs.map(l => l.date.split('T')[0])).size;
+    const daysWithData = new Set(scoped.map(l => l.date.split('T')[0])).size;
     const posCount = emotionEnts.filter(l => classifyEmotion(l.value).valence === 'positive').length;
     const negCount = emotionEnts.filter(l => classifyEmotion(l.value).valence === 'negative').length;
 
@@ -1115,6 +1482,159 @@ function renderInsightSummary() {
         ${statCard('Negative tags', negCount,        '',   'neg')}
         ${statCard('Days logged',   daysWithData,    '',   'ink')}
     `;
+}
+
+// --- 9c. BEHAVIORAL CORRELATION GRID (V4) -------------------------------------
+// For each activity tag, compute the average energy on days WHERE the activity
+// was logged vs. days WHERE it was NOT. Render as a row with two thin bars
+// (with-tag | without-tag) and a small delta badge.
+function renderBehavioralCorrelationGrid() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    const activities = state.userSettings.customActivities;
+    if (activities.length === 0 || scoped.length === 0) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)]">Behavioral Correlation</p>
+                <p class="text-[var(--ls-ink-soft)] text-sm mt-2">Add an activity in Settings to see how your habits correlate with energy.</p>
+            </div>
+        `);
+        return;
+    }
+
+    // Group entries by day.
+    const dayMap = new Map();
+    scoped.forEach(l => {
+        const day = l.date.split('T')[0];
+        if (!dayMap.has(day)) dayMap.set(day, { energy: [], activities: [] });
+        const bucket = dayMap.get(day);
+        if (l.type === 'energy') bucket.energy.push(l.value);
+        if (l.type === 'activity') bucket.activities.push(l.value);
+    });
+
+    const rows = activities.map(act => {
+        let withSum = 0, withN = 0, withoutSum = 0, withoutN = 0;
+        dayMap.forEach(b => {
+            const dayAvg = b.energy.length ? b.energy.reduce((s, v) => s + v, 0) / b.energy.length : null;
+            if (dayAvg === null) return;
+            if (b.activities.includes(act.id)) { withSum += dayAvg; withN++; }
+            else                              { withoutSum += dayAvg; withoutN++; }
+        });
+        const withAvg    = withN    ? withSum    / withN    : null;
+        const withoutAvg = withoutN ? withoutSum / withoutN : null;
+        const delta = (withAvg !== null && withoutAvg !== null) ? (withAvg - withoutAvg) : null;
+        return { act, withAvg, withoutAvg, delta, withN, withoutN };
+    });
+
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-1">Behavioral Correlation</p>
+            <p class="text-[12px] text-[var(--ls-ink-soft)] mb-3">Avg energy on days you DID vs. DIDN'T log each activity</p>
+            <div class="space-y-2.5" id="behavioral-rows"></div>
+        </div>
+    `);
+    const rowsHost = document.getElementById('behavioral-rows');
+    rows.forEach(r => {
+        const widthFor = v => v ? Math.max(4, Math.min(100, (v / 10) * 100)) : 0;
+        const deltaSign = r.delta === null ? '–' : (r.delta >= 0 ? `+${r.delta.toFixed(1)}` : r.delta.toFixed(1));
+        const deltaColor = r.delta === null ? 'text-[var(--ls-ink-mute)]'
+                         : r.delta >= 0 ? 'text-[#5F7A50]'
+                         : 'text-[#A0332A]';
+        rowsHost.insertAdjacentHTML('beforeend', `
+            <div class="text-[12px]">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="font-bold text-[var(--ls-ink)]">${escapeHtml(r.act.name)}</span>
+                    <span class="${deltaColor} font-black">${deltaSign}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-[var(--ls-bg-soft)] rounded-full h-2.5 overflow-hidden"><div class="h-full bg-[var(--ls-accent)]" style="width:${widthFor(r.withAvg)}%"></div></div>
+                    <span class="w-12 text-right font-bold text-[var(--ls-accent-deep)]">${r.withAvg !== null ? r.withAvg.toFixed(1) : '–'}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-[var(--ls-bg-soft)] rounded-full h-2.5 overflow-hidden"><div class="h-full bg-[var(--ls-ink-mute)]" style="width:${widthFor(r.withoutAvg)}%"></div></div>
+                    <span class="w-12 text-right font-bold text-[var(--ls-ink-mute)]">${r.withoutAvg !== null ? r.withoutAvg.toFixed(1) : '–'}</span>
+                </div>
+                <div class="text-[10px] text-[var(--ls-ink-mute)] mt-1">${r.withN}d logged · ${r.withoutN}d not</div>
+            </div>
+        `);
+    });
+}
+
+// --- 9d. SYMPTOM CO-OCCURRENCE CHART (V4) -------------------------------------
+// For each symptom, compute the % of days the symptom was logged that ALSO had
+// activity / emotion tags. Render as a horizontal bar list.
+function renderSymptomCooccurrenceChart() {
+    const charts = document.getElementById('insights-charts');
+    if (!charts) return;
+
+    const scoped = applyDateRangeFilter(state.dailyLogs);
+    const symptoms = state.userSettings.customSymptoms;
+    if (symptoms.length === 0 || scoped.length === 0) {
+        charts.insertAdjacentHTML('beforeend', `
+            <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)]">Symptom Co-occurrence</p>
+                <p class="text-[var(--ls-ink-soft)] text-sm mt-2">Add a symptom in Settings to see what tends to co-occur with it.</p>
+            </div>
+        `);
+        return;
+    }
+
+    const dayMap = new Map();
+    scoped.forEach(l => {
+        const day = l.date.split('T')[0];
+        if (!dayMap.has(day)) dayMap.set(day, { symptoms: [], activities: [], emotions: [] });
+        const b = dayMap.get(day);
+        if (l.type === 'symptom')  b.symptoms.push(l.value);
+        if (l.type === 'activity') b.activities.push(l.value);
+        if (l.type === 'emotion')  b.emotions.push(l.value);
+    });
+
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="ios-card bg-white border border-[var(--ls-bg-deep)] p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mb-1">Symptom Co-occurrence</p>
+            <p class="text-[12px] text-[var(--ls-ink-soft)] mb-3">Most common tags on days a symptom was logged</p>
+            <div class="space-y-2.5" id="cooccur-rows"></div>
+        </div>
+    `);
+    const host = document.getElementById('cooccur-rows');
+
+    symptoms.forEach(sym => {
+        let symptomDays = 0;
+        const tagHits = new Map();
+        dayMap.forEach(b => {
+            if (!b.symptoms.includes(sym.id)) return;
+            symptomDays++;
+            b.activities.forEach(a => tagHits.set('a:' + a, (tagHits.get('a:' + a) || 0) + 1));
+            b.emotions.forEach(e => tagHits.set('e:' + e, (tagHits.get('e:' + e) || 0) + 1));
+        });
+
+        if (symptomDays === 0) {
+            host.insertAdjacentHTML('beforeend', `
+                <div class="text-[12px] text-[var(--ls-ink-mute)] italic">${escapeHtml(sym.name)} — no occurrences in range</div>
+            `);
+            return;
+        }
+        const top = Array.from(tagHits, ([key, n]) => ({ key, n, pct: Math.round((n / symptomDays) * 100) }))
+                         .sort((a, b) => b.n - a.n).slice(0, 4);
+        const labelFor = k => k.startsWith('a:') ? classifyActivity(k.slice(2)).label
+                            : k.startsWith('e:') ? classifyEmotion(k.slice(2)).label
+                            : k;
+        host.insertAdjacentHTML('beforeend', `
+            <div class="text-[12px] pt-2 border-t border-[var(--ls-bg-deep)] first:pt-0 first:border-0">
+                <div class="font-bold text-[var(--ls-ink)] mb-1">${escapeHtml(sym.name)} <span class="text-[10px] text-[var(--ls-ink-mute)] font-normal">(${symptomDays}d)</span></div>
+                ${top.map(t => `
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="w-4 text-[10px] text-[var(--ls-ink-mute)] uppercase">${t.key.startsWith('a:') ? 'act' : 'emo'}</span>
+                        <div class="flex-1 bg-[var(--ls-bg-soft)] rounded-full h-2 overflow-hidden"><div class="h-full bg-[var(--ls-accent)]" style="width:${Math.max(4, t.pct)}%"></div></div>
+                        <span class="w-24 truncate text-[var(--ls-ink)] font-bold">${escapeHtml(labelFor(t.key))}</span>
+                        <span class="w-10 text-right font-black text-[var(--ls-accent-deep)]">${t.pct}%</span>
+                    </div>
+                `).join('')}
+            </div>
+        `);
+    });
 }
 
 function statCard(label, value, suffix, tone) {
@@ -1164,4 +1684,387 @@ function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[ch]));
+}
+
+// --- 6c. DAY TIMELINE (V4.1) ---------------------------------------------------
+// Time-rooted comparison view: a 24-row × 5-column grid where the VERTICAL
+// axis is the wall-clock (00:00 at top of day, 23:00 near bottom) and the
+// HORIZONTAL axis is one column per category. Each entry is plotted as a
+// colour-coded dot in its (hour, category) cell so the user can compare
+// across categories AT THE SAME INSTANT. Lane backgrounds carry subtle
+// per-category tints so the heat of the day's events reads visually even
+// without inspecting every dot.
+function renderDayTimeline() {
+    const feed = document.getElementById('continuous-timeline-feed');
+    feed.innerHTML = '';
+    feed.className = 'relative pt-1 pb-32 overflow-y-auto no-scrollbar';
+
+    if (state.dailyLogs.length === 0) {
+        feed.innerHTML += '<p class="text-center text-[var(--ls-ink-mute)] text-sm mt-10">No entries logged yet.</p>';
+        return;
+    }
+
+    // YYYY-MM-DD for "today" using local-date arithmetic (timezone-safe).
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    let displayIso = todayIso;
+    let displayLogs = state.dailyLogs.filter(l => l.date.startsWith(todayIso));
+    // If there's nothing today yet, fall back to the most recent day that
+    // has at least one entry — never a blank page.
+    if (displayLogs.length === 0) {
+        const sorted = [...state.dailyLogs].sort((a, b) => b.date.localeCompare(a.date));
+        for (const log of sorted) {
+            const d = log.date.split('T')[0];
+            if (d !== todayIso) { displayIso = d; break; }
+        }
+        displayLogs = state.dailyLogs.filter(l => l.date.startsWith(displayIso));
+    }
+    const isToday = displayIso === todayIso;
+
+    // Summary chip row above the grid.
+    const [yy, mm, dd] = displayIso.split('-');
+    const dateObj = new Date(parseInt(yy), parseInt(mm) - 1, parseInt(dd));
+    const counts = {
+        energy:   displayLogs.filter(l => l.type === 'energy').length,
+        emotion:  displayLogs.filter(l => l.type === 'emotion').length,
+        symptom:  displayLogs.filter(l => l.type === 'symptom').length,
+        activity: displayLogs.filter(l => l.type === 'activity').length,
+        note:     displayLogs.filter(l => l.type === 'note').length
+    };
+    feed.insertAdjacentHTML('beforeend', `
+        <div class="day-summary">
+            <p class="text-[15px] font-black text-[var(--ls-ink)] tracking-tight">${isToday ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'long' })}</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mt-0.5">${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            <div class="flex gap-1.5 mt-3 flex-wrap">
+                <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style="background:#FBEFD9;color:#B47A3C;border:1px solid #E0A967">Energy ${counts.energy}</span>
+                <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style="background:#ECF2E3;color:#5F7A50;border:1px solid #CBD9B5">Emotion ${counts.emotion}</span>
+                <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style="background:#F8E2CB;color:#B47A3C;border:1px solid #E7B985">Symptom ${counts.symptom}</span>
+                <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style="background:#E9EEF6;color:#3D5470;border:1px solid #C3CCDE">Activity ${counts.activity}</span>
+                <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style="background:#F0E7D9;color:#6E5E5E;border:1px solid #DCC9AC">Note ${counts.note}</span>
+            </div>
+        </div>
+    `);
+
+    // Sticky header row.
+    feed.insertAdjacentHTML('beforeend', `
+        <div class="day-header-row">
+            <div class="day-time-head">Time</div>
+            <div class="day-col-head">Energy</div>
+            <div class="day-col-head">Emotion</div>
+            <div class="day-col-head">Symptom</div>
+            <div class="day-col-head">Activity</div>
+            <div class="day-col-head">Note</div>
+        </div>
+    `);
+
+    // 24 rows × (1 time + 5 category cells) = 144 grid items. Each row is
+    // 30 px tall; day-axis label only renders on majors (every 3 hours).
+    const currentHour = today.getHours();
+    let grid = '<div class="day-grid">';
+    for (let h = 0; h < 24; h++) {
+        const hourLabel = String(h).padStart(2, '0');
+        const isMajor = (h % 3 === 0);
+        const isNow   = isToday && h === currentHour;
+        const rowClass = `day-hour ${isMajor ? 'major' : ''}${isNow ? ' day-now-row' : ''}`;
+        grid += `<div class="${rowClass}"><div class="day-h-axis">${isMajor ? hourLabel : ''}</div></div>`;          // 1: time gutter
+        grid += `<div class="${rowClass} day-row-bg-energy"></div>`;                                                // 2: energy
+        grid += `<div class="${rowClass} day-row-bg-emotion"></div>`;                                                // 3: emotion (gradient handled in CSS)
+        grid += `<div class="${rowClass} day-row-bg-symptom"></div>`;                                                // 4: symptom
+        grid += `<div class="${rowClass} day-row-bg-activity"></div>`;                                               // 5: activity
+        grid += `<div class="${rowClass} day-row-bg-note"></div>`;                                                   // 6: note
+    }
+    grid += '</div>';
+    feed.insertAdjacentHTML('beforeend', grid);
+
+    // Place dots. The grid is FLAT (children of .day-grid), so cell index =
+    //   baseTime + 1 (time gutter) + categoryIndex  for hour `h`:
+    //     base      = 6*h
+    //     time cell = 6*h + 0  (axis gutter)
+    //     cat cell  = 6*h + 1 + idx   where idx = 0..4 for [energy,emotion,symptom,activity,note]
+    const CATEGORIES = ['energy', 'emotion', 'symptom', 'activity', 'note'];
+    const cellsByHourCat = {}; // track count per (hour,category) to stagger dots.
+    displayLogs.forEach(log => {
+        const d = new Date(log.date);
+        const hour = d.getHours();
+        const idx = CATEGORIES.indexOf(log.type);
+        if (idx === -1) return;
+        const cellIndex = 6 * hour + 1 + idx;
+        const cell = feed.querySelector('.day-grid').children[cellIndex];
+        if (!cell) return;
+        const key = `${hour}-${log.type}`;
+        cellsByHourCat[key] = (cellsByHourCat[key] || 0) + 1;
+        const nth = cellsByHourCat[key] - 1;
+        const dot = document.createElement('div');
+        dot.className = 'day-dot';
+        dot.style.backgroundColor = entryNodeColor(log);
+        dot.style.left = `${6 + nth * 12}px`;
+        // Friendlier tooltip with the actual entry text.
+        let labelTxt = '';
+        if (log.type === 'energy')                 labelTxt = `Energy ${log.value}/10`;
+        else if (log.type === 'emotion')           labelTxt = classifyEmotion(log.value)?.label || '?';
+        else if (log.type === 'symptom')           labelTxt = (classifySymptom(log.value)?.label || '?') + (log.severity ? ' (' + log.severity + ')' : '');
+        else if (log.type === 'activity')          labelTxt = classifyActivity(log.value)?.label || '?';
+        else if (log.type === 'note')              labelTxt = (log.value || '').slice(0, 60);
+        dot.title = `${String(hour).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}  •  ${labelTxt}`;
+        dot.onclick = (e) => { e.stopPropagation(); openDayModal(displayIso, [log]); };
+        cell.appendChild(dot);
+    });
+
+    // "Now" indicator: a thin 1.5px accent line + tiny clock label spanning
+    // the row of the current hour (only when viewing today). Helps locate
+    // the live hour at a glance.
+    if (isToday) {
+        const minutesIntoHour = today.getMinutes();
+        const cellIndex = 6 * currentHour + 0;  // 1st cell of current hour row = time gutter
+        const cell = feed.querySelector('.day-grid').children[cellIndex];
+        if (cell) {
+            const nowline = document.createElement('div');
+            nowline.className = 'absolute left-0 right-0 h-[1.5px] bg-[var(--ls-accent)] pointer-events-none';
+            // Map minutes 0..59 onto the cell's 30px height.
+            nowline.style.top = `${Math.round((minutesIntoHour / 60) * 28) + 1}px`;
+            nowline.style.zIndex = '1';
+            cell.appendChild(nowline);
+        }
+    }
+}
+
+// --- 6b. KANBAN TIMELINE (V4) ---------------------------------------------------
+// Five vertical swimlanes laid out side-by-side with horizontal scroll-snap.
+// Each lane shows all entries of one category, newest first at the top, grouped
+// under inline date headers ("Today", "Yesterday", "Mar 14"). User swipes
+// left/right to navigate categories; scroll inside a lane to see history.
+// Inline 14-day mini-line for a Lane header. Y-axis differs per channel:
+// energy 1-10, symptom severity 0-3, emotion polarity (positive ~top), and
+// activity/note counts (clamped at 3/day).
+function buildLaneSparkline(laneType) {
+    const days = 14, W = 80, H = 24, stepX = W / (days - 1);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dayMap = new Map();
+    state.dailyLogs.forEach(l => {
+        if (l.type !== laneType) return;
+        const day = l.date.split('T')[0];
+        if (!dayMap.has(day)) dayMap.set(day, []);
+        dayMap.get(day).push(l.value);
+    });
+    const series = [];
+    for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(d.getDate() - i);
+        const vals = dayMap.get(d.toISOString().split('T')[0]) || [];
+        series.push(vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null);
+    }
+    const yFor = (v) => {
+        if (v == null) return null;
+        if (laneType === 'energy') return H - ((v - 1) / 9) * H;
+        if (laneType === 'symptom') {
+            const s = v === 'severe' ? 3 : v === 'moderate' ? 2 : v === 'mild' ? 1 : 0;
+            return H - (s / 3) * H;
+        }
+        if (laneType === 'emotion') return H - (classifyEmotion(v).valence === 'positive' ? 0.85 : 0.15) * H;
+        return H - Math.min(1, v / 3) * H; // activity / note: count, clamped at 3
+    };
+    const parts = [];
+    let pen = true;
+    series.forEach((v, i) => {
+        const y = yFor(v);
+        if (y === null) { pen = true; return; }
+        parts.push(`${pen ? 'M' : 'L'}${(i * stepX).toFixed(1)},${y.toFixed(1)}`);
+        pen = false;
+    });
+    return parts.join(' ') || 'M0,12';
+}
+
+function renderKanbanTimeline() {
+    const feed = document.getElementById('continuous-timeline-feed');
+    feed.innerHTML = '';
+    feed.className = 'pt-3 pb-32';
+
+    if (state.dailyLogs.length === 0) {
+        feed.innerHTML = '<p class="text-center text-[var(--ls-ink-mute)] text-sm mt-10">No entries logged yet.</p>';
+        return;
+    }
+
+    const rail = document.createElement('div');
+    rail.className = 'kanban-rail';
+
+    const sorted = [...state.dailyLogs].sort((a, b) => b.date.localeCompare(a.date));
+    // V4: date comparison uses local date components. UTC-derived .toISOString()
+    // would produce dateOnly values that are off-by-one near midnight for anyone
+    // west of UTC, then "Today" / "Yesterday" labels would mis-attribute.
+    const today = new Date();
+    const yest  = new Date(); yest.setDate(yest.getDate() - 1);
+    const fmtLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const todayIso = fmtLocal(today);
+    const yestIso  = fmtLocal(yest);
+
+    [{ id: 'energy',   label: 'Energy',     color: '#D89B5C', dotColor: 'var(--ls-accent)' },
+     { id: 'emotion',  label: 'Emotion',    color: '#7E9A6B', dotColor: '#7E9A6B' },
+     { id: 'symptom',  label: 'Symptoms',   color: '#E89C5B', dotColor: '#E89C5B' },
+     { id: 'activity', label: 'Activity',   color: '#7C9CB1', dotColor: '#7C9CB1' },
+     { id: 'note',     label: 'Notes',      color: '#A0876A', dotColor: '#A0876A' }
+    ].forEach(laneDef => {
+        const laneLogs = sorted.filter(l => l.type === laneDef.id);
+        const lane = document.createElement('div');
+        lane.className = 'kanban-lane';
+
+        // Lane header.
+        const header = document.createElement('div');
+        header.className = 'kanban-lane-header';
+        const sparkPath = buildLaneSparkline(laneDef.key);
+        header.innerHTML = `
+            <span class="dot" style="background:${laneDef.color}"></span>
+            <span class="lane-title">${laneDef.label}</span>
+            <svg class="sparkline-svg" width="80" height="24" viewBox="0 0 80 24" preserveAspectRatio="none" aria-hidden="true">
+                <path d="${sparkPath}" stroke="${laneDef.color}" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="count">${laneLogs.length}</span>
+        `;
+        lane.appendChild(header);
+
+        if (laneLogs.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'text-[12px] text-[var(--ls-ink-mute)] text-center py-6 italic';
+            empty.innerText = `No ${laneDef.label.toLowerCase()} entries yet.`;
+            lane.appendChild(empty);
+            rail.appendChild(lane);
+            return;
+        }
+
+        // Group by date with a small inline-day-header between groups.
+        let lastDate = '';
+        laneLogs.forEach(log => {
+            const dateOnly = log.date.split('T')[0];
+            if (dateOnly !== lastDate) {
+                const dh = document.createElement('div');
+                const humanLabel = dateOnly === todayIso ? 'Today'
+                                 : dateOnly === yestIso  ? 'Yesterday'
+                                 : new Date(dateOnly + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                dh.className = 'text-[10px] font-black uppercase tracking-widest text-[var(--ls-ink-mute)] mt-2 mb-1';
+                dh.innerText = humanLabel;
+                lane.appendChild(dh);
+                lastDate = dateOnly;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'kanban-entry';
+            card.onclick = () => openDayModal(dateOnly, [log]);
+            const time = new Date(log.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+
+            let label = '';
+            switch (log.type) {
+                case 'energy':   label = `Energy ${log.value}/10`; break;
+                case 'emotion':  label = escapeHtml(classifyEmotion(log.value).label); break;
+                case 'symptom':  label = `${escapeHtml(classifySymptom(log.value).label)} · ${log.severity}`; break;
+                case 'activity': label = escapeHtml(classifyActivity(log.value).label); break;
+                case 'note':     label = ''; break;
+            }
+            const truncated = label.length > 80 ? label.slice(0, 77) + '…' : label;
+            card.innerHTML = `<div class="k-time">${time}</div><div class="k-label">${truncated || log.value.slice(0, 80) || ''}</div>`;
+            lane.appendChild(card);
+        });
+
+        rail.appendChild(lane);
+    });
+
+    feed.appendChild(rail);
+}
+
+// --- 8b. APPEARANCE SETTINGS (V4) ---------------------------------------------
+function applyTheme(themeName) {
+    if (!THEMES.includes(themeName)) themeName = DEFAULT_THEME;
+    // V4: target <html> (documentElement) instead of <body>. This lets a tiny
+    // <script> in <head> pre-load the user's saved theme BEFORE the body
+    // paints, eliminating the warm-cream flash on page reload when the saved
+    // theme is soft-paper or dim-warm.
+    document.documentElement.dataset.theme = themeName;
+    updateSwatchSelected('[data-theme].swatch', 'theme', themeName);
+}
+function applyAccent(accentName) {
+    if (!ACCENT_NAMES.includes(accentName)) accentName = DEFAULT_ACCENT;
+    document.documentElement.dataset.accent = accentName;
+    updateSwatchSelected('[data-accent].swatch', 'accent', accentName);
+    // Mark the custom-hex input as the active swatch when accent === 'custom',
+    // so the visible "selected" indicator isn't lost on a custom pick.
+    const customInput = document.getElementById('custom-accent-input');
+    if (customInput) customInput.dataset.selected = (accentName === 'custom') ? 'true' : 'false';
+}
+function updateSwatchSelected(selector, attr, currentValue) {
+    document.querySelectorAll(selector).forEach(el => {
+        el.dataset.selected = (el.dataset[attr] === currentValue) ? 'true' : 'false';
+    });
+}
+function bindAppearanceSwatches() {
+    document.querySelectorAll('[data-theme].swatch').forEach(btn => {
+        btn.onclick = () => {
+            const theme = btn.dataset.theme;
+            state.userSettings.preferences.theme = theme;
+            applyTheme(theme);
+            saveStateToLocalStorage();
+        };
+    });
+    document.querySelectorAll('[data-accent].swatch').forEach(btn => {
+        btn.onclick = () => {
+            const accent = btn.dataset.accent;
+            state.userSettings.preferences.accent = accent;
+            applyAccent(accent);
+            saveStateToLocalStorage();
+        };
+    });
+    const customInput = document.getElementById('custom-accent-input');
+    if (customInput) {
+        customInput.oninput = () => {
+            // Live preview. CSS custom properties cascade, so setting them on
+            // <html> (documentElement) keeps us consistent with applyAccent
+            // and with the head-level preload script's storage path.
+            const c = customInput.value;
+            document.documentElement.style.setProperty('--ls-accent', c);
+            document.documentElement.style.setProperty('--ls-accent-deep', c);
+        };
+        customInput.onchange = () => {
+            // Persist: store hex under a 'custom' accent tag.
+            const c = customInput.value;
+            if (!ACCENT_NAMES.includes('custom')) ACCENT_NAMES.push('custom');
+            state.userSettings.preferences.accent = 'custom';
+            state.userSettings.preferences.customAccent = c;
+            applyAccent('custom');
+            saveStateToLocalStorage();
+        };
+    }
+    // Restore a stored custom-hex accent after page load. Targets html to
+    // keep consistent with applyAccent() and the head-level preload script.
+    if (state.userSettings.preferences.accent === 'custom' && state.userSettings.preferences.customAccent) {
+        document.documentElement.style.setProperty('--ls-accent', state.userSettings.preferences.customAccent);
+        document.documentElement.style.setProperty('--ls-accent-deep', state.userSettings.preferences.customAccent);
+    }
+}
+
+// --- 9b. INSIGHTS DATE-RANGE FILTER (V4) --------------------------------------
+function bindInsightsRangeChips() {
+    document.querySelectorAll('.range-chip').forEach(chip => {
+        chip.onclick = () => setInsightsRange(chip.dataset.range);
+    });
+}
+function setInsightsRange(range) {
+    if (!['7d','30d','90d','all'].includes(range)) range = 'all';
+    insightsRange = range;
+    state.userSettings.preferences.insightsRange = range;
+    saveStateToLocalStorage();
+    updateRangeChipsUI();
+    if (document.getElementById('view-insights') && !document.getElementById('view-insights').classList.contains('hidden')) {
+        renderInsights();
+    }
+}
+function updateRangeChipsUI() {
+    document.querySelectorAll('.range-chip').forEach(chip => {
+        const selected = chip.dataset.range === insightsRange;
+        chip.className = selected
+            ? 'range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-[var(--ls-accent)] text-white border border-[var(--ls-accent-deep)] shadow-soft'
+            : 'range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-white border border-[var(--ls-bg-deep)] text-[var(--ls-ink-soft)]';
+    });
+}
+function applyDateRangeFilter(entries) {
+    if (insightsRange === 'all') return entries;
+    const days = parseInt(insightsRange, 10);
+    if (!Number.isFinite(days)) return entries;
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+    return entries.filter(l => new Date(l.date) >= cutoff);
 }

@@ -79,3 +79,303 @@ input, textarea, select {
     border-color: var(--ls-cream-deep);
 }
 input:focus, textarea:focus, select:focus { outline-color: var(--ls-accent); }
+
+/* =============================================================================
+   Theme + accent variants (V4)
+   ============================================================================= */
+
+/* Three curated themes. Selected via body[data-theme]. */
+[data-theme="warm-cream"] {
+    --ls-bg:           #FAF6EE;
+    --ls-bg-soft:      #F5EFE3;
+    --ls-bg-deep:      #ECE3D0;
+    --ls-ink:          #3D3548;
+    --ls-ink-soft:     #6E5E5E;
+    --ls-ink-mute:     #A0876A;
+    --ls-accent:       #D89B5C;
+    --ls-accent-deep:  #B47A3C;
+    color-scheme: light;
+}
+[data-theme="soft-paper"] {
+    /* Cooler, almost-neutral paper tone. Same accent palette but cooler base. */
+    --ls-bg:           #F4F1EA;
+    --ls-bg-soft:      #EDE8DD;
+    --ls-bg-deep:      #DFD8C6;
+    --ls-ink:          #2E3440;
+    --ls-ink-soft:     #5C6675;
+    --ls-ink-mute:     #8B8678;
+    --ls-accent:       #C77862;
+    --ls-accent-deep:  #9C5A47;
+    color-scheme: light;
+}
+[data-theme="dim-warm"] {
+    /* Darker warm mode — evening-on-the-couch palette. */
+    --ls-bg:           #1E1A1E;
+    --ls-bg-soft:      #2A2429;
+    --ls-bg-deep:      #3D343A;
+    --ls-ink:          #F2E8DC;
+    --ls-ink-soft:     #C8B8A4;
+    --ls-ink-mute:     #8A7A6A;
+    --ls-accent:       #E89C5B;
+    --ls-accent-deep:  #D17F3A;
+    color-scheme: dark;
+}
+
+/* Accent palette: four preset hues plus custom. Selected via body[data-accent]
+   overriding only the --ls-accent / --ls-accent-deep variables. */
+[data-accent="terracotta"] { --ls-accent: #D89B5C; --ls-accent-deep: #B47A3C; }
+[data-accent="sage"]       { --ls-accent: #7E9A6B; --ls-accent-deep: #5F7A50; }
+[data-accent="mocha"]      { --ls-accent: #A0876A; --ls-accent-deep: #6E5E5E; }
+[data-accent="ink"]        { --ls-accent: #3D3548; --ls-accent-deep: #28191E; }
+[data-accent="blush"]      { --ls-accent: #E07B85; --ls-accent-deep: #B05863; }
+
+/* =============================================================================
+   Calendar grid refinements (V4)
+   ============================================================================= */
+/* Subtle zebra striping on every other week-row to make scan easier without
+   adding heavy borders. The grid uses nth-child(14n..14n+6) selectors scoped
+   via the .apple-grid class. */
+.apple-grid .cal-row-stripe                    { background: rgba(31, 27, 24, 0.02); }
+.apple-grid .cal-row-stripe-dim               { background: transparent; }
+[data-theme="dim-warm"] .apple-grid .cal-row-stripe { background: rgba(255, 240, 220, 0.025); }
+/* Faint column rules drawn only between cells in a single row. */
+.apple-grid .cal-col-rule { box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.03); }
+[data-theme="dim-warm"] .apple-grid .cal-col-rule { box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04); }
+
+/* =============================================================================
+   Kanban timeline (V4)
+   ============================================================================= */
+/* Five vertical lanes side-by-side with snap-to-center horizontal scroll.
+   Each lane is 85% viewport width with adjacent lanes peeking. */
+.kanban-rail {
+    display: flex;
+    overflow-x: scroll;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    gap: 12px;
+    padding: 4px 16px 40px 16px;
+    margin: 0 -16px;
+}
+.kanban-rail::-webkit-scrollbar { display: none; }
+.kanban-lane {
+    flex: 0 0 85%;
+    scroll-snap-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 20px 16px;
+    border-radius: 18px;
+    background: var(--ls-bg-soft);
+    border: 1px solid var(--ls-bg-deep);
+    min-height: 60vh;
+}
+.kanban-entry {
+    background: var(--ls-bg);
+    border-radius: 14px;
+    padding: 11px 13px;
+    border: 1px solid var(--ls-bg-deep);
+    cursor: pointer;
+    transition: transform 0.06s ease;
+}
+.kanban-lane-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ls-bg-deep);
+    margin-bottom: 4px;
+}
+.kanban-lane-header .dot { width: 10px; height: 10px; border-radius: 50%; }
+.kanban-lane-header .count {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ls-ink-mute);
+}
+.kanban-lane-header .sparkline-svg {
+    margin-left: auto;
+    display: block;
+    overflow: visible;
+}
+.kanban-lane-header .lane-title {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--ls-ink);
+    letter-spacing: -0.01em;
+}
+
+/* Entry card inside a kanban lane. Slim: time on top row, label on second. */
+.kanban-entry {
+    background: var(--ls-bg);
+    border-radius: 12px;
+    padding: 9px 11px;
+    border: 1px solid var(--ls-bg-deep);
+    cursor: pointer;
+    transition: transform 0.06s ease;
+}
+.kanban-entry:active { transform: scale(0.985); }
+.kanban-entry .k-time   { font-size: 11px; font-weight: 700; color: var(--ls-ink-mute); letter-spacing: 0.05em; text-transform: uppercase; }
+.kanban-entry .k-label  { font-size: 17px; font-weight: 800; color: var(--ls-ink); margin-top: 2px; line-height: 1.2; word-break: break-word; }
+
+/* =============================================================================
+   Misc V4 utilities
+   ============================================================================= */
+/* Subtle horizontal hairline used under section headers. */
+.hairline-bottom { border-bottom: 1px solid var(--ls-bg-deep); }
+
+/* =============================================================================
+   Day timeline (V4.1) — time-rooted swimlane matrix
+   ============================================================================= */
+/* 24 rows × 6 columns. Y axis = hour (00 a 23), X axis = 50px time gutter + 5
+   category columns. Each hour is 30px tall so the whole grid is ~720px --
+   fits an iPhone viewport minus chrome. Lane backgrounds carry very subtle
+   category tints so the heat of the day's events reads visually without
+   having to inspect every dot. */
+.day-grid {
+    display: grid;
+    grid-template-columns: 50px repeat(5, minmax(0, 1fr));
+    margin-top: 4px;
+}
+.day-h-axis        { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ls-ink-mute); display: flex; align-items: flex-start; justify-content: flex-end; padding-top: 2px; padding-right: 6px; }
+.day-hour          { min-height: 30px; border-bottom: 1px solid var(--ls-bg-deep); padding: 0; position: relative; }
+.day-hour.major    { border-bottom-color: var(--ls-ink-mute); }
+
+/* .day-now-row is declared FIRST so per-category row backgrounds (below) can
+   layer on top of it in the cascade — i.e. the now-row baseline tint does
+   not overwrite the per-category gradient on the current hour's row. */
+.day-now-row         { background: rgba(216, 155, 92, 0.06); }
+[data-theme="dim-warm"] .day-now-row         { background: rgba(216, 155, 92, 0.04); }
+.day-row-bg-energy   { background: rgba(248, 226, 188, 0.30); }
+.day-row-bg-emotion  { background: linear-gradient(90deg, rgba(168, 195, 157, 0.30) 0%, rgba(196, 109, 102, 0.30) 100%); }
+.day-row-bg-symptom  { background: rgba(232, 156, 91, 0.10); }
+.day-row-bg-activity { background: rgba(168, 181, 204, 0.30); }
+.day-row-bg-note     { background: rgba(160, 135, 106, 0.18); }
+[data-theme="dim-warm"] .day-row-bg-energy   { background: rgba(248, 226, 188, 0.10); }
+[data-theme="dim-warm"] .day-row-bg-emotion  { background: linear-gradient(90deg, rgba(168, 195, 157, 0.10) 0%, rgba(196, 109, 102, 0.10) 100%); }
+[data-theme="dim-warm"] .day-row-bg-activity { background: rgba(168, 181, 204, 0.10); }
+[data-theme="dim-warm"] .day-row-bg-symptom  { background: rgba(232, 156, 91, 0.05); }
+[data-theme="dim-warm"] .day-row-bg-note     { background: rgba(160, 135, 106, 0.10); }
+
+.day-header-row {
+    display: grid;
+    grid-template-columns: 50px repeat(5, minmax(0, 1fr));
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(250, 246, 238, 0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--ls-bg-deep);
+}
+[data-theme="dim-warm"] .day-header-row {
+    background: rgba(30, 26, 30, 0.92);
+}
+.day-time-head { padding: 8px 4px; text-align: right; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ls-ink-mute); }
+.day-col-head  { padding: 8px 4px; text-align: center; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ls-ink); }
+
+.day-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--ls-bg);
+    box-shadow: 0 1px 2px rgba(61, 53, 72, 0.10);
+    cursor: pointer;
+    position: absolute;
+    top: 50%; transform: translateY(-50%);
+    transition: transform 0.06s ease;
+    z-index: 2;
+}
+.day-dot:active { transform: translateY(-50%) scale(1.18); }
+[data-theme="dim-warm"] .day-dot { border-color: var(--ls-bg-soft); }
+
+.day-summary {
+    padding: 10px 14px 14px 14px;
+    background: var(--ls-bg);
+    border-bottom: 1px solid var(--ls-bg-deep);
+}
+
+/* Appearance picker swatches. */
+.swatch { width: 56px; height: 56px; border-radius: 14px; cursor: pointer; transition: transform 0.1s ease; box-shadow: 0 0 0 2px transparent inset; }
+.swatch[data-selected="true"] { box-shadow: 0 0 0 2.5px var(--ls-accent) inset; }
+.swatch:active { transform: scale(0.96); }
+
+/* V4: custom-hex color input styling + active indicator. The colour-input's
+   native appearance differs from a <button class="swatch">, so we add the
+   ring via this separate rule rather than sharing .swatch[data-selected]. */
+input[type="color"] {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    padding: 0; -webkit-appearance: none; appearance: none;
+    background: transparent;
+    border: 1px solid var(--ls-bg-deep);
+    cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; border-radius: 12px; }
+input[type="color"]::-webkit-color-swatch        { border: none; border-radius: 12px; }
+input[type="color"]::-moz-color-swatch           { border: none; border-radius: 12px; }
+input[type="color"][data-selected="true"] {
+    box-shadow: 0 0 0 2.5px var(--ls-accent) inset;
+    transform: scale(0.96);
+}
+
+/* =============================================================================
+   Insights view V4.1 — Top 3 Influencers, Calendar Heatmap, Multi-axis Chart,
+   Inline Sparklines, Day-of-Week Pattern.
+   These styles are referenced by renderTopInfluencers / renderCalendarSeverityMap
+   / renderMultiAxisChart / renderDayOfWeekChart in app.js.
+   ============================================================================= */
+
+/* Top 3 Influencers — horizontal-snap card carousel.
+   Each card carries a tag, an arrow, a target, a big number, and an N. */
+.influencer-rail     { display: flex; gap: 12px; overflow-x: auto; padding: 0 4px 8px 4px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.influencer-rail::-webkit-scrollbar { display: none; }
+.influencer-card     { flex: 0 0 78%; scroll-snap-align: center; background: var(--ls-bg); border: 1px solid var(--ls-bg-deep); border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-height: 130px; }
+.influencer-tag      { font-size: 14px; font-weight: 800; color: var(--ls-ink); text-transform: uppercase; letter-spacing: 0.04em; }
+.influencer-arrow    { font-size: 16px; font-weight: 700; color: var(--ls-ink-mute); }
+.influencer-target   { font-size: 14px; font-weight: 700; color: var(--ls-ink-mute); }
+.influencer-delta    { font-size: 26px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; }
+.influencer-delta.up   { color: #7E9A6B; }   /* sage = good (delta moved toward target's good direction) */
+.influencer-delta.down { color: #C44033; }   /* brick = bad (delta moved away from target's good direction) */
+.influencer-delta.flat { color: var(--ls-ink-mute); }
+.influencer-unit     { font-size: 11px; font-weight: 700; color: var(--ls-ink-mute); margin-left: 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+.influencer-n        { font-size: 11px; font-weight: 600; color: var(--ls-ink-mute); letter-spacing: 0.04em; }
+
+/* Calendar Severity Map — 7x6 grid of heat-coloured cells. */
+.heatmap-grid       { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 4px 2px; }
+.heatmap-cell       { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--ls-bg-deep); cursor: pointer; transition: transform 0.06s ease; min-height: 34px; position: relative; }
+.heatmap-cell:active { transform: scale(0.9); }
+.heatmap-cell.empty   { background: transparent; }
+[data-theme="dim-warm"] .heatmap-cell.empty { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.10); }
+.heatmap-cell.clear   { background: var(--ls-bg); }
+.heatmap-cell.mild    { background: #F1D88A; }
+.heatmap-cell.moderate{ background: #E89C5B; }
+.heatmap-cell.severe  { background: #C44033; }
+[data-theme="dim-warm"] .heatmap-cell.mild     { background: rgba(241, 216, 138, 0.55); }
+[data-theme="dim-warm"] .heatmap-cell.moderate { background: rgba(232, 156, 91, 0.75); }
+[data-theme="dim-warm"] .heatmap-cell.severe   { background: #A0332A; }
+.heatmap-cell .day-num { position: absolute; bottom: 2px; right: 4px; font-size: 9px; font-weight: 700; color: rgba(0,0,0,0.4); line-height: 1; }
+[data-theme="dim-warm"] .heatmap-cell .day-num { color: rgba(255,255,255,0.7); }
+.heatmap-legend       { display: flex; gap: 12px; justify-content: center; margin-top: 8px; font-size: 11px; font-weight: 700; color: var(--ls-ink-mute); text-transform: uppercase; letter-spacing: 0.06em; }
+.heatmap-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+
+/* Multi-axis Parallel Chart — legend pill above SVG, scrubber on tap. */
+.parallel-card     { background: var(--ls-bg); border: 1px solid var(--ls-bg-deep); border-radius: 16px; padding: 14px 14px 12px 14px; }
+.parallel-legend   { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.parallel-legend .pl-i { display: flex; flex-direction: column; font-size: 11px; font-weight: 800; color: var(--ls-ink-mute); text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; gap: 2px; }
+.parallel-legend .pl-i .pl-label { font-size: 10px; }
+.parallel-legend .pl-i .pl-val   { font-size: 16px; font-weight: 900; color: var(--ls-ink); }
+.parallel-chart-svg { width: 100%; height: 160px; display: block; touch-action: pan-y; }
+.parallel-cursor    { stroke: var(--ls-ink-mute); stroke-width: 1; stroke-dasharray: 2 2; opacity: 0; pointer-events: none; }
+.parallel-line      { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Day-of-Week Pattern Chart — 7 vertical bars. */
+.dow-chart         { display: flex; gap: 6px; align-items: flex-end; height: 140px; padding: 12px 4px 0 4px; position: relative; }
+.dow-col           { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.dow-val           { font-size: 13px; font-weight: 800; color: var(--ls-ink); line-height: 1; }
+.dow-bar           { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; transition: filter 0.1s ease; }
+.dow-bar.peak      { background: var(--ls-accent); }
+.dow-bar.flat      { background: var(--ls-ink-soft); }
+.dow-bar.low       { background: var(--ls-ink-mute); }
+[data-theme="dim-warm"] .dow-bar.peak { background: var(--ls-accent); filter: brightness(1.15); }
+.dow-label         { font-size: 10px; font-weight: 800; color: var(--ls-ink-mute); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px; }

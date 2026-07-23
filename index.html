@@ -10,6 +10,29 @@
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#FAF6EE" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1E1A1E" media="(prefers-color-scheme: dark)">
+    <!-- V4: pre-load the saved theme + accent onto <html> BEFORE the body
+         paints. Eliminates the warm-cream flash that users would otherwise see
+         for ~1 frame when their saved theme is soft-paper or dim-warm. -->
+    <script>
+        (function () {
+            try {
+                var raw = localStorage.getItem('lifesync_data');
+                if (!raw) return;
+                var p = JSON.parse(raw).userSettings && JSON.parse(raw).userSettings.preferences;
+                if (!p) return;
+                var t = ['warm-cream', 'soft-paper', 'dim-warm'].indexOf(p.theme) !== -1 ? p.theme : 'warm-cream';
+                var a = ['terracotta', 'sage', 'mocha', 'ink', 'blush', 'custom'].indexOf(p.accent) !== -1 ? p.accent : 'terracotta';
+                document.documentElement.dataset.theme = t;
+                document.documentElement.dataset.accent = a;
+                if (p.accent === 'custom' && p.customAccent) {
+                    document.documentElement.style.setProperty('--ls-accent', p.customAccent);
+                    document.documentElement.style.setProperty('--ls-accent-deep', p.customAccent);
+                }
+            } catch (e) { /* safe to ignore on first-load errors */ }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
 
     <script src="app.js" defer></script>
@@ -19,13 +42,18 @@
     <!-- ============================= HEADER ============================= -->
     <!-- pt-safe honours the iPhone notch / Dynamic Island. The page bg cream
          bleeds through the translucent blur so the header feels integrated. -->
-    <header class="bg-[#FAF6EE]/85 backdrop-blur-md px-5 pt-safe pb-3 shrink-0 z-20 border-b border-[#ECE3D0]">
+    <!-- V4: header padding tightened (pt-safe pb-2 vs pb-3) and title shrunk
+         (20px vs 22px) so the content area starts ~14px higher on iPhone,
+         fixing the "field of view is down from center" feel. -->
+    <header class="bg-[#FAF6EE]/85 backdrop-blur-md px-5 pt-safe pb-2 shrink-0 z-20 border-b border-[#ECE3D0]">
         <div class="flex justify-between items-center">
-            <h1 class="text-[22px] font-black tracking-tight text-[#3D3548]" id="app-title">Log Your Day</h1>
+            <h1 class="text-[20px] font-black tracking-tight text-[#3D3548]" id="app-title">Log Your Day</h1>
 
-            <div id="mode-switcher" class="hidden bg-[#F5EFE3] p-1 rounded-xl flex gap-1">
-                <button onclick="setCalendarMode('month')" id="btn-mode-month" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm">Month</button>
-                <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Timeline</button>
+            <div id="mode-switcher" class="hidden bg-[#F5EFE3] p-1 rounded-xl flex gap-0.5">
+                <button onclick="setCalendarMode('month')"    id="btn-mode-month"    class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm">Month</button>
+                <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">List</button>
+                <button onclick="setCalendarMode('day')"      id="btn-mode-day"      class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Day</button>
+                <button onclick="setCalendarMode('kanban')"   id="btn-mode-kanban"   class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Lane</button>
             </div>
         </div>
     </header>
@@ -133,10 +161,15 @@
         <!-- ============================= INSIGHTS VIEW ============================= -->
         <section id="view-insights" class="hidden px-5 pt-5 pb-32 space-y-5">
 
-            <p class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Energy Over Time</p>
-            <div id="insights-chart-card" class="bg-white ios-card border border-[#ECE3D0] shadow-sm p-5">
-                <div id="insights-chart-container"></div>
+            <!-- Date-range filter chips (V4). Tap to scope all three charts. -->
+            <div class="flex gap-1.5 overflow-x-auto no-scrollbar" id="insights-range-chips">
+                <button data-range="7d"   class="range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-[#D89B5C] text-white border border-[#B47A3C] shadow-soft">7d</button>
+                <button data-range="30d"  class="range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-white border border-[#ECE3D0] text-[#6E5E5E]">30d</button>
+                <button data-range="90d"  class="range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-white border border-[#ECE3D0] text-[#6E5E5E]">90d</button>
+                <button data-range="all"  class="range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-white border border-[#ECE3D0] text-[#6E5E5E]">All</button>
             </div>
+
+            <div id="insights-charts" class="space-y-5"></div>
 
             <div id="insights-summary" class="grid grid-cols-2 gap-3"></div>
         </section>
@@ -183,6 +216,27 @@
                 <button onclick="resetAllData()" class="w-full bg-[#F8E6E3] border border-[#E9C8C4] text-[#C44033] active:bg-[#F0D2CD] font-bold py-3 rounded-2xl text-sm">
                     Reset all data
                 </button>
+            </div>
+
+            <!-- ============================= APPEARANCE (V4) ============================= -->
+            <!-- Theme picker: three curated palettes. Selecting one re-themes the page instantly. -->
+            <div class="space-y-3 pt-4 border-t border-[#ECE3D0]">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Appearance</h3>
+                <div class="flex gap-2.5">
+                    <button data-theme="warm-cream" class="swatch" style="background:linear-gradient(135deg,#FAF6EE 0%,#D89B5C 100%)" aria-label="Warm cream"></button>
+                    <button data-theme="soft-paper" class="swatch" style="background:linear-gradient(135deg,#F4F1EA 0%,#C77862 100%)" aria-label="Soft paper"></button>
+                    <button data-theme="dim-warm"   class="swatch" style="background:linear-gradient(135deg,#1E1A1E 0%,#E89C5B 100%)" aria-label="Dim warm"></button>
+                </div>
+
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A] pt-2">Accent</h3>
+                <div class="flex gap-2.5 items-center">
+                    <button data-accent="terracotta" class="swatch" style="background:#D89B5C" aria-label="Terracotta"></button>
+                    <button data-accent="sage"       class="swatch" style="background:#7E9A6B" aria-label="Sage"></button>
+                    <button data-accent="mocha"      class="swatch" style="background:#A0876A" aria-label="Mocha"></button>
+                    <button data-accent="ink"        class="swatch" style="background:#3D3548" aria-label="Ink"></button>
+                    <button data-accent="blush"      class="swatch" style="background:#E07B85" aria-label="Blush"></button>
+                    <input id="custom-accent-input" type="color" value="#D89B5C" class="ml-1 w-12 h-12 rounded-xl cursor-pointer bg-transparent border border-[#ECE3D0]" aria-label="Custom accent color">
+                </div>
             </div>
         </section>
 
