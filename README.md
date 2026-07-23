@@ -14,7 +14,27 @@ Everything lives in `localStorage` — there is no backend, no analytics, no clo
 
 ## Run locally
 
-Open `index.html` in any modern browser. To get the full "installed app" feel on iPhone, host it over HTTPS (e.g. via GitHub Pages) and add it to the Home Screen.
+The whole app is static HTML/CSS/JS with no build step, so any HTTP server works. A tiny `serve.sh` wrapper is included for convenience.
+
+```bash
+chmod +x serve.sh          # only needed once after a fresh git clone
+./serve.sh                 # port 8000, opens browser automatically
+./serve.sh 8080            # custom port
+./serve.sh --no-open       # skip browser launch
+./serve.sh --help          # full docs
+```
+
+If `chmod +x` isn't an option (e.g. on a read-only filesystem), the script works just as well via `bash serve.sh`.
+
+`serve.sh` tries `python3`, then `python`, then `npx http-server`, then `php -S` — whichever you have installed. If none of those work, just `python3 -m http.server` from the project root works the same way.
+
+While iterating:
+
+- Hard-refresh after edits: **Cmd+Shift+R** (mac) / **Ctrl+F5** (windows) so the browser doesn't stash an old `app.js`.
+- Open DevTools → Network → **Disable cache** while DevTools is open for fully automatic reloads.
+- Reset the demo data: DevTools → Application → Local Storage → delete the `lifesync_data` key, then reload.
+
+To install as a real iPhone app, host it over HTTPS (e.g. via GitHub Pages) and add to the Home Screen from Safari.
 
 ## Files
 

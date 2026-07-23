@@ -14,15 +14,18 @@
 
     <script src="app.js" defer></script>
 </head>
-<body class="text-slate-800 flex flex-col h-screen overflow-hidden">
+<body class="text-[#3D3548] flex flex-col h-screen overflow-hidden">
 
-    <header class="bg-white/90 backdrop-blur-md px-6 py-4 pt-10 shrink-0 z-20 border-b border-slate-100">
+    <!-- ============================= HEADER ============================= -->
+    <!-- pt-safe honours the iPhone notch / Dynamic Island. The page bg cream
+         bleeds through the translucent blur so the header feels integrated. -->
+    <header class="bg-[#FAF6EE]/85 backdrop-blur-md px-5 pt-safe pb-3 shrink-0 z-20 border-b border-[#ECE3D0]">
         <div class="flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900" id="app-title">Log Your Day</h1>
+            <h1 class="text-[22px] font-black tracking-tight text-[#3D3548]" id="app-title">Log Your Day</h1>
 
-            <div id="mode-switcher" class="hidden bg-slate-100 p-1 rounded-xl flex gap-1">
-                <button onclick="setCalendarMode('month')" id="btn-mode-month" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-slate-800 shadow-sm">Month</button>
-                <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-500">Timeline</button>
+            <div id="mode-switcher" class="hidden bg-[#F5EFE3] p-1 rounded-xl flex gap-1">
+                <button onclick="setCalendarMode('month')" id="btn-mode-month" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm">Month</button>
+                <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Timeline</button>
             </div>
         </div>
     </header>
@@ -30,87 +33,108 @@
     <main class="flex-grow overflow-y-auto no-scrollbar relative" id="main-content">
 
         <!-- ============================= LOG VIEW ============================= -->
-        <section id="view-log" class="p-6 space-y-6">
+        <!-- V3: each Save produces ONE entry. The channel picker switches the
+             visible panel below. Multi-select channels (emotion/activity) still
+             expand into parallel entries per Save. The Save button is a sticky
+             floating pill anchored to the bottom of the Log view, above the
+             system bottom nav, and respects the iPhone home-indicator inset. -->
+        <section id="view-log" class="px-5 pt-5 pb-40 space-y-5">
 
             <div class="space-y-2">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Date & Time</label>
-                <input type="datetime-local" id="log-date" class="w-full bg-white border border-slate-200 rounded-xl p-4 text-slate-800 font-semibold focus:outline-none">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Date &amp; Time</label>
+                <input type="datetime-local" id="log-date" class="w-full bg-white border border-[#ECE3D0] rounded-2xl p-4 text-[#3D3548] font-semibold focus:outline-none">
             </div>
 
-            <div class="space-y-3 pt-2">
+            <!-- Channel picker -->
+            <div class="space-y-3">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">What are you logging?</label>
+                <div id="channel-picker" class="flex gap-2"></div>
+            </div>
+
+            <!-- ENERGY panel (default visible) -->
+            <div data-channel-panel="energy" class="space-y-3 pt-4 border-t border-[#ECE3D0]">
                 <div class="flex justify-between items-center">
-                    <label class="text-xs font-bold uppercase tracking-wider text-slate-400">Energy Level</label>
-                    <span id="energy-value" class="text-xl font-black text-blue-600">5/10</span>
+                    <label class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Energy Level</label>
+                    <span id="energy-value" class="text-xl font-black text-[#D89B5C]">5/10</span>
                 </div>
-                <input type="range" id="log-energy" min="1" max="10" value="5" class="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="updateEnergyDisplay(this.value)">
-                <div class="flex justify-between text-[10px] font-bold text-slate-400 px-1">
+                <input type="range" id="log-energy" min="1" max="10" value="5" class="w-full h-2.5 bg-[#ECE3D0] rounded-lg appearance-none cursor-pointer accent-[#D89B5C]" oninput="updateEnergyDisplay(this.value)">
+                <div class="flex justify-between text-[10px] font-bold text-[#A0876A] px-1">
                     <span>Exhausted</span>
                     <span>Neutral</span>
                     <span>Hyper</span>
                 </div>
             </div>
 
-            <!-- Emotions -->
-            <div class="space-y-4 pt-4 border-t border-slate-100">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Emotions</label>
-
+            <!-- EMOTION panel -->
+            <div data-channel-panel="emotion" class="space-y-4 pt-4 border-t border-[#ECE3D0] hidden">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Emotions <span class="text-[#ECE3D0] normal-case font-medium">(tap each one you felt)</span></label>
                 <div class="space-y-2">
-                    <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500">Positive</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-[#7E9A6B]">Positive</span>
                     <div id="positive-emotions-list" class="flex flex-wrap gap-2"></div>
                 </div>
-
                 <div class="space-y-2 pt-2">
-                    <span class="text-[10px] font-black uppercase tracking-widest text-rose-500">Negative</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-[#C44033]">Negative</span>
                     <div id="negative-emotions-list" class="flex flex-wrap gap-2"></div>
                 </div>
             </div>
 
-            <!-- Symptoms (with severity) -->
-            <div class="space-y-3 pt-4 border-t border-slate-100">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Symptoms <span class="text-slate-300 normal-case font-medium">(tap a severity to log it)</span></label>
+            <!-- SYMPTOM panel -->
+            <div data-channel-panel="symptom" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Symptoms <span class="text-[#ECE3D0] normal-case font-medium">(pick a severity per symptom)</span></label>
                 <div id="symptoms-list" class="space-y-2"></div>
             </div>
 
-            <!-- Activities / Behaviors -->
-            <div class="space-y-3 pt-4 border-t border-slate-100">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Activities / Behaviors</label>
+            <!-- ACTIVITY panel -->
+            <div data-channel-panel="activity" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Activities / Behaviors <span class="text-[#ECE3D0] normal-case font-medium">(tap what you did)</span></label>
                 <div id="activities-list" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <!-- Notes -->
-            <div class="space-y-3 pt-4 border-t border-slate-100">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Notes <span class="text-slate-300 normal-case font-medium">(optional)</span></label>
-                <textarea id="log-notes" rows="3" placeholder="Anything noteworthy about today…" class="w-full bg-white border border-slate-200 rounded-xl p-4 text-slate-800 font-medium focus:outline-none resize-none placeholder:text-slate-400"></textarea>
+            <!-- NOTE panel -->
+            <div data-channel-panel="note" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Notes <span class="text-[#ECE3D0] normal-case font-medium">(one note per save)</span></label>
+                <textarea id="log-notes" rows="3" placeholder="Anything noteworthy…" class="w-full bg-white border border-[#ECE3D0] rounded-2xl p-4 text-[#3D3548] font-medium focus:outline-none resize-none placeholder:text-[#A0876A]"></textarea>
             </div>
+        </section>
 
-            <button onclick="saveCurrentLog()" id="log-save-btn" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 transition duration-150 mt-4">
+        <!-- Sticky floating Save pill. Lives outside of <section id="view-log">
+             so we can absolutely-position it; toggled visible only when on the
+             Log tab via switchTab().
+             bottom offset = bottom-nav height (3rem ~= 56px) + 8px gap + safe inset. -->
+        <div id="log-save-bar" class="fixed inset-x-0 z-40 flex justify-center pointer-events-none" style="bottom: calc(env(safe-area-inset-bottom) + 64px)">
+            <button onclick="saveCurrentLog()" id="log-save-btn"
+                    class="pointer-events-auto w-[88%] max-w-md text-white font-black py-4 rounded-2xl shadow-soft transition active:scale-[0.98] border border-[#B47A3C]"
+                    style="background-color:#D89B5C">
                 Save Entry
             </button>
-        </section>
+        </div>
 
         <!-- ============================= CALENDAR VIEW ============================= -->
         <section id="view-calendar" class="hidden h-full">
 
-            <div id="calendar-month-container" class="h-full overflow-y-auto no-scrollbar pb-24">
-                <div class="sticky top-0 bg-white/95 backdrop-blur-sm z-10 grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-slate-400 py-3 border-b border-slate-100">
+            <div id="calendar-month-container" class="h-full overflow-y-auto no-scrollbar pb-32">
+                <div class="sticky top-0 bg-[#FAF6EE]/85 backdrop-blur-md z-20 grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-[#A0876A] py-3 border-b border-[#ECE3D0]">
                     <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                </div>
+                <!-- Single sticky month label. Updated on scroll by an IntersectionObserver
+                     sentry at the first cell of each month in renderContinuousCalendar(). -->
+                <div id="current-month-label" class="sticky top-[44px] bg-[#FAF6EE]/85 backdrop-blur-md z-10 text-center py-2 text-[15px] font-black text-[#3D3548] border-b border-[#ECE3D0]">
+                    Month Year
                 </div>
                 <div id="apple-calendar-stack" class="px-2"></div>
             </div>
 
-            <div id="calendar-timeline-container" class="hidden h-full overflow-y-auto no-scrollbar px-6 py-6 pb-32 relative">
-                <div class="absolute left-[39px] top-0 bottom-0 w-[2px] bg-slate-100 z-0"></div>
-
-                <div id="continuous-timeline-feed" class="space-y-8 relative z-10"></div>
+            <div id="calendar-timeline-container" class="hidden h-full overflow-y-auto no-scrollbar pb-32 relative">
+                <div id="continuous-timeline-feed" class="relative z-10"></div>
             </div>
 
         </section>
 
         <!-- ============================= INSIGHTS VIEW ============================= -->
-        <section id="view-insights" class="hidden p-6 space-y-6 pb-32">
+        <section id="view-insights" class="hidden px-5 pt-5 pb-32 space-y-5">
 
-            <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Energy Over Time</p>
-            <div id="insights-chart-card" class="bg-white ios-card border border-slate-100 shadow-sm p-5">
+            <p class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Energy Over Time</p>
+            <div id="insights-chart-card" class="bg-white ios-card border border-[#ECE3D0] shadow-sm p-5">
                 <div id="insights-chart-container"></div>
             </div>
 
@@ -118,45 +142,45 @@
         </section>
 
         <!-- ============================= SETTINGS VIEW ============================= -->
-        <section id="view-settings" class="hidden p-6 space-y-8 pb-32">
+        <section id="view-settings" class="hidden px-5 pt-5 pb-32 space-y-8">
 
             <!-- Emotions -->
-            <div class="space-y-4">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Emotions</h3>
+            <div class="space-y-3">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Manage Emotions</h3>
                 <div class="flex gap-2">
-                    <input type="text" id="new-emotion-name" placeholder="Emotion Name" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
-                    <select id="new-emotion-valence" class="bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-bold text-sm">
+                    <input type="text" id="new-emotion-name" placeholder="Emotion Name" class="flex-grow bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-semibold">
+                    <select id="new-emotion-valence" class="bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-bold text-sm">
                         <option value="positive">Pos (+)</option>
                         <option value="negative">Neg (-)</option>
                     </select>
-                    <button onclick="addNewEmotion()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
+                    <button onclick="addNewEmotion()" class="text-white px-5 rounded-2xl font-black shadow-soft border border-[#B47A3C]" style="background-color:#D89B5C">+</button>
                 </div>
-                <div id="settings-emotions-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+                <div id="settings-emotions-list" class="divide-y divide-[#ECE3D0] border-t border-[#ECE3D0] mt-4 pt-2"></div>
             </div>
 
             <!-- Symptoms -->
-            <div class="space-y-4">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Symptoms</h3>
+            <div class="space-y-3">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Manage Symptoms</h3>
                 <div class="flex gap-2">
-                    <input type="text" id="new-symptom-name" placeholder="Symptom Name (e.g. Acid Reflux)" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
-                    <button onclick="addNewSymptom()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
+                    <input type="text" id="new-symptom-name" placeholder="Symptom Name (e.g. Acid Reflux)" class="flex-grow bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-semibold">
+                    <button onclick="addNewSymptom()" class="text-white px-5 rounded-2xl font-black shadow-soft border border-[#B47A3C]" style="background-color:#D89B5C">+</button>
                 </div>
-                <div id="settings-symptoms-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+                <div id="settings-symptoms-list" class="divide-y divide-[#ECE3D0] border-t border-[#ECE3D0] mt-4 pt-2"></div>
             </div>
 
             <!-- Activities -->
-            <div class="space-y-4">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Activities / Behaviors</h3>
+            <div class="space-y-3">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Manage Activities / Behaviors</h3>
                 <div class="flex gap-2">
-                    <input type="text" id="new-activity-name" placeholder="Activity (e.g. Caffeine, Workout)" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
-                    <button onclick="addNewActivity()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
+                    <input type="text" id="new-activity-name" placeholder="Activity (e.g. Caffeine, Workout)" class="flex-grow bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-semibold">
+                    <button onclick="addNewActivity()" class="text-white px-5 rounded-2xl font-black shadow-soft border border-[#B47A3C]" style="background-color:#D89B5C">+</button>
                 </div>
-                <div id="settings-activities-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+                <div id="settings-activities-list" class="divide-y divide-[#ECE3D0] border-t border-[#ECE3D0] mt-4 pt-2"></div>
             </div>
 
-            <div class="space-y-4 pt-4 border-t border-slate-100">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Data</h3>
-                <button onclick="resetAllData()" class="w-full bg-rose-50 border border-rose-100 text-rose-600 active:bg-rose-100 font-bold py-3 rounded-2xl text-sm">
+            <div class="space-y-3 pt-4 border-t border-[#ECE3D0]">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Data</h3>
+                <button onclick="resetAllData()" class="w-full bg-[#F8E6E3] border border-[#E9C8C4] text-[#C44033] active:bg-[#F0D2CD] font-bold py-3 rounded-2xl text-sm">
                     Reset all data
                 </button>
             </div>
@@ -165,31 +189,33 @@
     </main>
 
     <!-- ============================= DAY MODAL ============================= -->
-    <div id="day-modal" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-end justify-center z-50 transition-opacity duration-300">
-        <div class="bg-white w-full max-w-lg rounded-t-[32px] p-6 pb-12 space-y-6 max-h-[85vh] overflow-y-auto translate-y-full transition-transform duration-300 shadow-2xl" id="day-modal-sheet">
+    <div id="day-modal" class="hidden fixed inset-0 bg-[#3D3548]/40 backdrop-blur-sm flex items-end justify-center z-50 transition-opacity duration-300">
+        <div class="bg-white w-full max-w-lg rounded-t-3xl p-6 pb-12 space-y-5 max-h-[85vh] overflow-y-auto translate-y-full transition-transform duration-300 shadow-2xl" id="day-modal-sheet">
             <div class="flex justify-between items-center sticky top-0 bg-white pb-2 z-10">
-                <h3 id="modal-date-title" class="text-2xl font-black text-slate-900">July 14</h3>
-                <button onclick="closeDayModal()" class="bg-slate-100 text-slate-500 font-bold p-2 rounded-full w-8 h-8 flex items-center justify-center active:scale-90">✕</button>
+                <h3 id="modal-date-title" class="text-2xl font-black text-[#3D3548]">July 14</h3>
+                <button onclick="closeDayModal()" class="bg-[#F5EFE3] text-[#6E5E5E] font-bold p-2 rounded-full w-8 h-8 flex items-center justify-center active:scale-90">✕</button>
             </div>
-            <div id="modal-content-area" class="space-y-4"></div>
+            <div id="modal-content-area" class="space-y-3"></div>
         </div>
     </div>
 
     <!-- ============================= BOTTOM NAV ============================= -->
-    <nav class="bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around py-3 px-2 shrink-0 z-30 absolute bottom-0 w-full pb-[calc(env(safe-area-inset-bottom)+12px)]">
-        <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1 text-blue-600" id="btn-log" style="color:#007aff">
+    <!-- Cream-tinted, ink-warm tabs. Active tab = terracotta accent. pb-safe
+         honours the iPhone home-indicator. -->
+    <nav class="bg-[#FAF6EE]/90 backdrop-blur-md border-t border-[#ECE3D0] flex justify-around py-2.5 px-2 shrink-0 z-30 pb-safe">
+        <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1" id="btn-log" style="color:#D89B5C">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
             <span class="text-[10px] font-bold">Log</span>
         </button>
-        <button onclick="switchTab('calendar')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-calendar">
+        <button onclick="switchTab('calendar')" class="tab-btn flex flex-col items-center gap-1 text-[#A0876A]" id="btn-calendar">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             <span class="text-[10px] font-bold">History</span>
         </button>
-        <button onclick="switchTab('insights')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-insights">
+        <button onclick="switchTab('insights')" class="tab-btn flex flex-col items-center gap-1 text-[#A0876A]" id="btn-insights">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
             <span class="text-[10px] font-bold">Insights</span>
         </button>
-        <button onclick="switchTab('settings')" class="tab-btn flex flex-col items-center gap-1 text-slate-400" id="btn-settings">
+        <button onclick="switchTab('settings')" class="tab-btn flex flex-col items-center gap-1 text-[#A0876A]" id="btn-settings">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             <span class="text-[10px] font-bold">Settings</span>
         </button>

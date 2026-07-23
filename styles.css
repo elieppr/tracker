@@ -1,23 +1,81 @@
-/* iOS-native feel: removes tap flash, uses system font, respects safe areas */
-body {
-    -webkit-tap-highlight-color: transparent;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-top: env(safe-area-inset-top);
-    background-color: #f0f2f5;   /* PRD §3.1 — neutral light background */
-    color: #1c1c1e;
-}
+/* =============================================================================
+   LifeSync Tracker - styles.css
+   Warm Honey/Cream palette + phone-first safe-area utilities. Tailwind handles
+   most layout/spacing via the CDN, so this file is intentionally small.
+   ============================================================================= */
 
-/* Hide scrollbars on the in-app scroll regions for a native feel */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* PRD §3.1 — card borders use iOS standard 20px rounding */
-.ios-card { border-radius: 20px; }
-
-/* PRD §3.1 — accent palette shorthand */
 :root {
-    --ls-blue: #007aff;
-    --ls-green: #34c759;
-    --ls-red: #ff3b30;
+    /* Warm palette - Honey/Cream. Tweak these and the rest of the app stays
+       in sync because app.js reads these via JS. CSS values here are for the
+       raw Tailwind classes / direct CSS that doesn't get JS-touched. */
+    --ls-bg:           #FAF6EE;   /* page background, calm cream */
+    --ls-cream-soft:   #F5EFE3;   /* section backgrounds, stickier pills */
+    --ls-cream-deep:   #ECE3D0;   /* rules, dividers, weekday header */
+    --ls-ink:          #3D3548;   /* primary text (warm plum, not stark) */
+    --ls-ink-soft:     #6E5E5E;   /* secondary text */
+    --ls-ink-mute:     #A0876A;   /* tertiary text, mocha */
+
+    /* Category hues - the visual ribbons in Timeline */
+    --ls-energy-1:     #F8D6A8;   /* peach, low */
+    --ls-energy-2:     #F4A261;   /* warm amber */
+    --ls-energy-3:     #E76F51;   /* terracotta -- high */
+    --ls-energy-4:     #C44033;   /* warm brick red -- peak */
+    --ls-emotion-pos:  #A8C39D;   /* sage -- positive */
+    --ls-emotion-neg:  #E0A3A3;   /* dusty rose -- negative */
+    --ls-symptom-mild: #F1D88A;
+    --ls-symptom-mod:  #E89C5B;
+    --ls-symptom-sev:  #C44033;
+    --ls-activity:     #A8B5CC;   /* dusty blue */
+    --ls-note:         #B59F87;   /* mocha */
+
+    /* Brand accent - terracotta, used for today circle + active filters */
+    --ls-accent:       #D89B5C;
+    --ls-accent-deep:  #B47A3C;
 }
+
+/* Phone-first: respect iPhone notch + Dynamic Island on top, home indicator on bottom. */
+.pt-safe { padding-top:    max(env(safe-area-inset-top),    12px); }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
+.mb-safe { margin-bottom:  max(env(safe-area-inset-bottom), 12px); }
+
+/* Hide scrollbars while remaining scrollable. */
+.no-scrollbar::-webkit-scrollbar       { display: none; }
+.no-scrollbar                         { scrollbar-width: none; }
+
+/* Card surface. Single source of truth for the project "card" aesthetic. */
+.ios-card {
+    background: #ffffff;
+    border: 1px solid var(--ls-cream-deep);
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(61, 53, 72, 0.04), 0 4px 12px rgba(61, 53, 72, 0.03);
+}
+
+/* Soft drop used for the floating Save pill. */
+.shadow-soft {
+    box-shadow: 0 8px 24px rgba(61, 53, 72, 0.12), 0 2px 6px rgba(61, 53, 72, 0.06);
+}
+
+/* Category-tinted card surfaces (used by renderEntryInline). Energy and
+   mild-card have deliberately distinct hues + borders so a stacked
+   Energy+/Mild-symptom log pair doesn't read as a single undifferentiated
+   ochre ribbon. */
+.cat-energy   { background: #FCE2BC; border-color: #E0A967; }
+.cat-pos      { background: #ECF2E3; border-color: #CBD9B5; }
+.cat-neg      { background: #F8E6E3; border-color: #E9C8C4; }
+.cat-mild     { background: #F4EDA0; border-color: #D9B859; }
+.cat-mod      { background: #F8D0A5; border-color: #D8965A; }
+.cat-sev      { background: #F4B9A6; border-color: #C56A52; }
+.cat-activity { background: #E9EEF6; border-color: #C3CCDE; }
+.cat-note     { background: #F0E7D9; border-color: #DCC9AC; }
+
+/* Body bg - set explicitly so Tailwind's `bg-...` utilities don't override. */
+html, body          { background: var(--ls-bg); }
+body                { color: var(--ls-ink); -webkit-font-smoothing: antialiased; }
+
+/* iOS input defaults — make the cream date/log inputs feel native. */
+input, textarea, select {
+    background: #ffffff;
+    color: var(--ls-ink);
+    border-color: var(--ls-cream-deep);
+}
+input:focus, textarea:focus, select:focus { outline-color: var(--ls-accent); }

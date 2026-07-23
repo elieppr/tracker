@@ -1,6 +1,6 @@
-# LifeSync Tracker - Product Requirements Document (PRD) V2
+# LifeSync Tracker - Product Requirements Document (PRD) V3
 
-**Version:** 2.0 (Collaborative Revision)  
+**Version:** 3.0 (Data Model + Visual System Refactor)  
 **Target Platform:** iOS Progressive Web App (PWA)  
 **Storage Strategy:** Private, Device-Only (Local Storage)  
 **Author:** AI Assistant & User Collaborative Design  
@@ -9,83 +9,145 @@
 
 ## 1. Executive Summary & Project Objectives
 
-The LifeSync Tracker is a lightweight, mobile-optimized Progressive Web App (PWA) designed specifically for iPhone. The application serves as a comprehensive, daily logging tool for individuals looking to uncover personal physiological and psychological correlation trends. By tracking daily energy, emotional valences, physical symptoms, and behavioral variables, LifeSync runs localized algorithms to identify personal trends (e.g., the relationship between caffeine, workout frequency, and energy level crashes).
+The LifeSync Tracker is a lightweight, mobile-optimized Progressive Web App (PWA) designed specifically for iPhone. It is a personal logging tool for uncovering physiological and psychological correlation trends between energy, emotional valences, somatic symptoms, and behavioral variables. **V3** preserves the on-device privacy posture of V2 (no backend, no analytics, no cloud sync) while refactoring two foundational layers of the product:
 
-In order to prioritize total data privacy, the application does not make use of any external databases, servers, or cloud analytics. All tracked data lives locally inside the user's browser, completely under their own control. To support absolute personalization, V2 introduces dynamic customization for all tracking elements (custom emotions, symptoms, and activities), advanced visual graphing, and an interactive calendar interface.
+1. The **data model** is now a flat stream of discrete, time-stamped *events* (one entry per Save) rather than the V2 *daily summary card* (one entry per Save bundling every channel).
+2. The **visual system** has been rebuilt around a warm, mobile-first design language that is friendlier, easier to scan, and explicitly designed for thumb-sized touch targets.
+
+Everything else the user already loves (customizable vocabulary, day-detail modal, retroactive logging, energy-over-time chart) is preserved.
 
 ---
 
 ## 2. Core Functional Requirements
 
-### 2.1 The Daily Logger (Data Entry Module)
+### 2.1 The Daily Logger → Discrete Event Stream (Revised in V3)
 
-The primary entry screen is optimized for fast, thumb-friendly mobile input. The data structures are defined as follows:
+The Log view is the primary entry surface and is designed for fast, thumb-friendly input under one hand.
 
 #### A. Date & Time Selection
 * **Default State:** Pre-filled with the current system date and time.
-* **Manual Adjustment:** A native iOS-style calendar picker to allow retroactive logging for skipped days, fully integrated with the new Calendar View module.
+* **Manual Adjustment:** A native iOS-style calendar picker to allow retroactive logging for skipped days, fully integrated with the Calendar view.
 
-#### B. Split Mood & Emotional State Module
-Emotional state is split into two distinct axes to isolate physiological fatigue from cognitive-emotional state:
-* **Energy Levels:** An interactive slider from 1 to 10 (1 = complete exhaustion, 10 = hyper-focused/alert).
-* **Emotion Tracker:** A multi-select checklist of emotion tags categorized into Positive (+) and Negative (-) valences.
+#### B. Channel Picker (New UI in V3)
+Each Save produces **a single logged thing**. The user first picks *what* they are logging, then enters the value in the appropriate panel. Five channels:
 
-#### C. Custom Descriptor Customization & Category Management (New in V2)
-Rather than relying on static, hardcoded lists, LifeSync provides a complete Custom Descriptor Management Suite. Users can customize, delete, and add names to fit their personal vocabulary across all major tracking categories.
+| Channel     | Input Control                     | Stored As                            |
+|-------------|-----------------------------------|--------------------------------------|
+| **Energy**  | Slider, 1–10 (default 5)          | `{ type:'energy',  value: 7 }`       |
+| **Emotion** | Multi-select pill row (pos/neg)   | `{ type:'emotion', value: 'e_happy' }` (one entry per selected tag) |
+| **Symptom** | Per-symptom row + severity (Mild / Mod / Sev) | `{ type:'symptom', value: 's_headache', severity:'severe' }` |
+| **Activity**| Multi-select pill row             | `{ type:'activity', value: 'a_caffeine' }` (one entry per selected tag) |
+| **Note**    | Plain-text textarea               | `{ type:'note', value: '…' }`        |
 
-| Category | User Customization Rules | Deletion & Data Grace Logic |
-| :--- | :--- | :--- |
-| **Emotions** | Users can add text labels (e.g., "Peaceful", "Restless") and explicitly assign them to either the Positive (+) or Negative (-) category. | If a custom emotion is deleted, existing historical logs containing that tag will not break. Instead, the deleted specific emotion will dynamically fallback to a generic placeholder "Deleted Positive Emotion" or "Deleted Negative Emotion", preserving the numerical balance of emotional valence for historical analytics. |
-| **Symptoms** | Users can define unique somatic or cognitive symptom names (e.g., "Acid Reflux", "Back Pain") to track alongside defaults. | Deleted symptoms map retrospectively to a generic "Custom Symptom (Deleted)" placeholder, ensuring the severity scale and correlation calculations are maintained. |
-| **Behaviors / Activities** | Users can input custom behaviors (e.g., "Meditation", "No Sugar Diet") to serve as tracking independent variables. | Deleted activities will map retrospectively to a generic "Custom Activity (Deleted)" placeholder so that historical days still indicate that an activity took place. |
+A multi-select Save (e.g. select Happy + Motivated) generates **two parallel entries** stamped with the same date+time. This preserves the V2 semantics of "I felt several things at once" while keeping each downstream record a single atomic event.
 
----
+#### C. Sticky Save Pill (New in V3)
+The **Save Entry** button is no longer inline at the bottom of the form. It is rendered as a **floating pill** anchored to `bottom = nav + 8px + safe-area-inset-bottom`. It is always visible regardless of form length, so the user never has to scroll to confirm a Save.
 
-### 2.2 Interactive Calendar View Module (New in V2)
+#### D. Custom Descriptor Customization & Category Management
+Carried forward from V2 with no behavioural change. Users can add text labels and assign valence (Positive / Negative) for emotions, and define custom symptom or activity names. Deletion preserves historical signal via fallback sentinel ids (`fallback_positive`, `fallback_negative`, `fallback_symptom`, `fallback_activity`).
 
-To facilitate high-level visual scanning of patterns, LifeSync V2 implements a fully interactive, scrollable Calendar View.
+### 2.2 Continuous-Flow Calendar View (Revised in V3)
 
-* **Month-at-a-Glance Dashboard:** A standard calendar matrix. Each day block is dynamic and populated with visual indicators representing the data logged for that day.
-* **Visual Indicators:**
-    * **Energy Indicator:** The background shading or a central numeric indicator on the calendar square corresponds to the logged energy score (e.g., light blue for low energy, deep blue/gold for high energy).
-    * **Valence Dots:** Color-coded miniature indicator dots representing positive (green) and negative (red) emotion tallies.
-    * **Symptom Icon:** A small warning exclamation mark icon appears if any symptom with a severity rating of "Moderate" or "Severe" was reported.
-* **Scrollability & Retroactive Actions:** Smooth vertical scrolling allows users to view past and future months. Tapping on any day tile opens a modal displaying the detailed history for that day, with a quick action button to edit/log data for that specific date.
+To replace the V2 "stack of five separate month blocks" with something the eye can actually scan continuously, V3 ships a **single seamless 7-col grid** that crosses month boundaries without section breaks.
 
----
+* **Continuous day-number grid:** the calendar renders one uninterrupted grid spanning `today − 2 months` → `today + 3 months`. Leading empty days are back-filled to Sunday so the first row of every partial month is padded, then the next month begins on the same row at the appropriate weekday column.
+* **Single sticky month label:** rather than a sticky month title per section, the entire view carries *one* small sticky label whose text is updated via an `IntersectionObserver` whenever the user scrolls a month's first cell into the visible strip. Avoids scroll-handler jank from `offsetTop` reads.
+* **Visual indicators on each day cell:** bold day number, today = solid terracotta circle (was Apple red — recoloured under warm palette), small peach→terracotta energy bar at the bottom, accumulator valence dots (max 2: sage for any positive, dusty-rose for any negative), and a single warm brick-red `!` pip in the top-right if any moderate/severe symptom was logged that day.
+* **Tap to inspect:** opens the day-detail modal (see 2.4).
+* **Scrolling keeps you oriented:** the calendar scrolls vertically a few months in either direction; the sticky weekday header + month label sit over the grid at `top: 0` / `top: 44px` respectively, both `backdrop-blur-md` against the cream background.
 
-### 2.3 Advanced Analytics & Visualization Graphs (New in V2)
+### 2.3 Insights & Trend Graphics
 
-To help users intuitively map complex physiological and psychological trends, the Insights tab will support local interactive graphics built with lightweight HTML5 Canvas or SVG.
+Carried forward from V2 with a palette refresh:
 
-1.  **Energy Over Time (Trend Line Chart):**
-    * **Description:** A continuous line graph displaying daily Energy Levels (1-10) plotted against time (weekly or monthly filters).
-    * **Insight Potential:** Helps identify cyclical energy dips or improvements across a month.
-2.  **Behavioral Correlation Grid (Impact Chart):**
-    * **Description:** A comparison bar chart showing the difference in average energy or positive valence ratio when a specific behavioral activity is toggled on vs. off (e.g., "Workout" vs. "No Workout").
-    * **Insight Potential:** Directly exposes which habits provide the highest return on mood and physical energy.
-3.  **Symptom Trigger / Co-occurrence Chart:**
-    * **Description:** A horizontal bar chart indicating the percentage of times specific behavior tags or negative emotions co-occurred with a reported physical symptom (e.g., "Headache days saw 80% Caffeine and 70% Stressed").
+* **Energy Over Time** — pure SVG, no dependencies. The trend line and points use the warm accent (`--ls-accent-deep`) over a peach gradient fill. Gridlines shift from `#e5e7eb` (cool slate) to `#ECE3D0` (cream-deep).
+* **Stat cards** at the bottom — Average Energy, Positive tag count, Negative tag count, Days with data. Tones are now accent terracotta / sage / dusty-rose / ink-warm.
 
----
+### 2.4 Day-Detail Modal & Timeline
 
-### 2.4 History Log & Timeline Module
+Two views share the underlying per-entry stream:
 
-Allows chronological scrolling of logs:
-* **Card Layout:** Displays date, energy level, selected emotions, symptoms, activities, and notes.
-* **Dynamic Custom Tag Updates:** Reflects custom labels. If a label was deleted, it displays the fallback placeholders discussed in the customization table above.
-* **Deletions:** Allows instant removal of inaccurate logs.
+* **Day modal** — bottom-sheet expanding from the bottom of the viewport. Each entry is its own row: time on the left, color-coded category dot in the center, type-tinted card on the right, **Del** button on the far right.
+* **History / Timeline** — a chronological feed of every entry ever logged. One row per entry. The card background is **heavily tinted by category** so the user sees vertical "ribbons" of colour while scrolling: energy blocks (peach), emotion-pos blocks (sage), emotion-neg blocks (dusty rose), symptom blocks (yellow / amber / brick based on severity), activity blocks (dusty blue), note blocks (mocha cream).
+* **Sticky date pills** anchored at `top: 0` interrupt the connecting thread visually via `backdrop-blur-md` but don't break the layout. Each pill carries the weekday + month-day and an entry count for that day.
 
 ---
 
-## 3. Technical Specifications & Data Safety
+## 3. Technical Specifications & Design System
 
-### 3.1 Visual Styling and Mobile UI
+### 3.1 Visual System — Warm Honey/Cream Palette (New in V3)
 
-* **Layout Rules:** Built with responsive CSS Grid and Flexbox to fit standard iPhone screens flawlessly. Card borders utilize standard iOS rounding (`border-radius: 20px`).
-* **Theme Palette:** Light mode optimized. Neutral background (`#f0f2f5`), crisp content cards (`#ffffff`), system blue accents (`#007aff`), system green positive accents (`#34c759`), and red negative indicators (`#ff3b30`).
-* **Offline PWA Engine:** Employs manifest-driven standalone parameters and client-side JavaScript execution to run entirely offline without performance loss.
+The V2 palette (pure white / Apple-blue / Apple-red / Apple-green) was clean but read as "clinical". V3 swaps it for **"morning sun on a kitchen table"**: warm cream backgrounds, terracotta accents, sage for positive emotion, dusty-rose for negative, dusty-blue for activity, mocha for note. Peak energy still goes warm brick-red so it reads as "you're on fire 🥵", not as an error.
 
-### 3.2 Local Storage Schema & Integrity Backup
+| Token                  | Hex       | Used For                                          |
+|------------------------|-----------|---------------------------------------------------|
+| `--ls-bg`              | `#FAF6EE` | Page background (body)                            |
+| `--ls-cream-soft`      | `#F5EFE3` | Section backgrounds, sticky pill backgrounds     |
+| `--ls-cream-deep`      | `#ECE3D0` | Rules, dividers, weekday header, sticky borders   |
+| `--ls-ink`             | `#3D3548` | Primary text (warm plum, not stark black)         |
+| `--ls-ink-soft`        | `#6E5E5E` | Secondary text                                    |
+| `--ls-ink-mute`        | `#A0876A` | Tertiary text (mocha)                             |
+| `--ls-accent`          | `#D89B5C` | Tertiary brand accent — Today circle, primary CTA |
+| `--ls-accent-deep`     | `#B47A3C` | CTA stroke, text on cream-tinted backgrounds      |
 
-To support customizable categories and deletion grace logic, the `localStorage` database schema holds two primary JSON datasets:
+Category tints are declared once in `styles.css` (`.cat-energy`, `.cat-pos`, `.cat-neg`, `.cat-mild`, `.cat-mod`, `.cat-sev`, `.cat-activity`, `.cat-note`) so a future palette tweak only edits one place. JS references them by name from a `CAT_CARD_CLASS` map.
+
+### 3.2 Phone-First Layout Rules (New in V3)
+
+The V3 layout follows three rules borrowed from the Apple "Compact, Clear, Accessible" HIG:
+
+1. **Safe-area insets are mandatory.** The header uses `padding-top: max(env(safe-area-inset-top), 12px)` (via the `pt-safe` utility), and the bottom-nav uses `padding-bottom: env(safe-area-inset-bottom)` (via `pb-safe`). The Save pill sits at `bottom: env(safe-area-inset-bottom) + 64px` so it floats above the nav + home indicator.
+2. **Touch targets ≥ 44pt where state-bearing.** Channel chips, emotion pills, activity pills, and severity buttons all use `py-2.5` (10px) plus a `rounded-2xl` shape; combined with the cream-tinted padding they comfortably hit ≥44pt even at small iPhone widths.
+3. **One primary action visible per view.** Log shows the Save pill floating above the form. History shows the open-modal trigger (tap a day). Insights shows the chart. Settings shows the "+" buttons next to the relevant input.
+
+### 3.3 Local Storage Schema & Migration (Updated for V3)
+
+The persisted payload is one JSON blob under the `lifesync_data` key:
+
+```json
+{
+  "userSettings": {
+    "customEmotions":   [{ "id": "e_happy", "name": "Happy", "valence": "positive" }, …],
+    "customSymptoms":   [{ "id": "s_headache", "name": "Headache" }, …],
+    "customActivities": [{ "id": "a_caffeine", "name": "Caffeine" }, …]
+  },
+  "dailyLogs": [
+    { "id": "log_…", "date": "2026-07-22T08:30", "type": "energy",   "value": 7 },
+    { "id": "log_…", "date": "2026-07-22T08:31", "type": "emotion",  "value": "e_happy" },
+    { "id": "log_…", "date": "2026-07-22T08:32", "type": "symptom",  "value": "s_headache", "severity": "moderate" },
+    { "id": "log_…", "date": "2026-07-22T08:33", "type": "activity", "value": "a_caffeine" },
+    { "id": "log_…", "date": "2026-07-22T11:00", "type": "note",     "value": "Strong morning." }
+  ],
+  "meta": { "seeded": true, "migratedToV3": true }
+}
+```
+
+#### V2 → V3 Migration (one-time, idempotent)
+On load, if `meta.migratedToV3` is not set, every V2 *daily card* is exploded into one entry per channel:
+- `log.energy` (number) → `{ type:'energy', value }`
+- `log.emotions[]` → `{ type:'emotion', value }` per id
+- `log.symptoms[]` → `{ type:'symptom', value, severity }` per id
+- `log.activities[]` → `{ type:'activity', value }` per id
+- `log.notes` (non-empty string) → `{ type:'note', value }`
+
+After the explode, `meta.migratedToV3 = true` is persisted so subsequent loads are no-ops.
+
+### 3.4 Offline PWA Engine
+
+Unchanged from V2 — `manifest.json` declares `standalone` display and is sufficient for "Add to Home Screen" on iOS. All rendering and chart math is local; no network calls.
+
+---
+
+## 4. Touchpoints That Changed in V3 (Quick Reference)
+
+| Area                       | V2                                         | V3                                                                  |
+|----------------------------|--------------------------------------------|---------------------------------------------------------------------|
+| Log form                   | One form, one Save, bundle it all          | Channel picker + 5 panels, one channel, one (or N) entries per Save |
+| Save button                | Inline at bottom of form                   | Floating pill anchored above bottom nav                             |
+| Calendar month headings    | One sticky title per stacked month         | One sticky title for the entire view, updates on scroll             |
+| Calendar today circle      | Apple red `#ff3b30`                        | Warm terracotta accent `#D89B5C`                                    |
+| Energy color ramp          | Apple-blue monochrome                      | Peach → terracotta → brick red                                      |
+| Timeline cards             | Uniform white background                   | Category-tinted backgrounds form visual ribbons                     |
+| Bottom nav / Header        | Apple blue + white                         | Cream + warm ink + terracotta accent                                |
+| Overall mood               | Clinical/Apple                             | Warm/morning-kitchen                                                |
