@@ -1,6 +1,6 @@
-# LifeSync Tracker - Product Requirements Document (PRD) V3
+# LifeSync Tracker - Product Requirements Document (PRD) V6.5
 
-**Version:** 3.0 (Data Model + Visual System Refactor)  
+**Version:** 6.5 (Curation + Inline Builder)  
 **Target Platform:** iOS Progressive Web App (PWA)  
 **Storage Strategy:** Private, Device-Only (Local Storage)  
 **Author:** AI Assistant & User Collaborative Design  
@@ -9,145 +9,191 @@
 
 ## 1. Executive Summary & Project Objectives
 
-The LifeSync Tracker is a lightweight, mobile-optimized Progressive Web App (PWA) designed specifically for iPhone. It is a personal logging tool for uncovering physiological and psychological correlation trends between energy, emotional valences, somatic symptoms, and behavioral variables. **V3** preserves the on-device privacy posture of V2 (no backend, no analytics, no cloud sync) while refactoring two foundational layers of the product:
+The LifeSync Tracker is a lightweight, mobile-optimized Progressive Web App (PWA) designed specifically for iPhone. It is a personal logging tool for uncovering physiological and psychological correlation trends between energy, emotional valences, somatic symptoms, behavioral variables, and user-defined categories. **V6.5** preserves the on-device privacy posture of all prior versions (no backend, no analytics, no cloud sync) while introducing three foundational upgrades on top of V6 (Sleep + Custom Categories) and V5 (Stream mode + Insights tabs):
 
-1. The **data model** is now a flat stream of discrete, time-stamped *events* (one entry per Save) rather than the V2 *daily summary card* (one entry per Save bundling every channel).
-2. The **visual system** has been rebuilt around a warm, mobile-first design language that is friendlier, easier to scan, and explicitly designed for thumb-sized touch targets.
+1. **Curated Insights.** The Insights view's three sub-tabs (Trends / Patterns) now ship only cards that earn their keep — discovering patterns the eye can't see in raw rows — and drop redundant charts that overlapped with the Stream / Calendar views.
+2. **Inline Category Builder.** The Log tab now exposes a `+ New custom category` pill beneath the channel picker that opens an in-place form (name + 6 color swatches + 3-way type selector with conditional scale min/max + Cancel/Save). Users no longer have to navigate to Settings to extend the schema.
+3. **Massive-typography summary headlines.** The bottom-of-Insights summary card was simplified from 4 small stat cards to 2 huge-number headlines (Average Energy, Your Best Day), so the most personal number reads like a wall on first glance.
 
-Everything else the user already loves (customizable vocabulary, day-detail modal, retroactive logging, energy-over-time chart) is preserved.
+Everything the user already loved (V3 continuous-flow calendar, V4 Kanban timeline, V4.1 bottom-nav fitting, V5 Stream mode, V6 Sleep) is preserved.
 
 ---
 
 ## 2. Core Functional Requirements
 
-### 2.1 The Daily Logger → Discrete Event Stream (Revised in V3)
+### 2.1 The Daily Logger → Discrete Event Stream (V3; extended in V6)
 
-The Log view is the primary entry surface and is designed for fast, thumb-friendly input under one hand.
+The Log view is the primary entry surface and is designed for fast, thumb-friendly input under one hand. Each Save produces **a single logged thing** — the user first picks *what* they are logging, then enters the value in the appropriate panel. The channel set is now extensible:
 
-#### A. Date & Time Selection
-* **Default State:** Pre-filled with the current system date and time.
-* **Manual Adjustment:** A native iOS-style calendar picker to allow retroactive logging for skipped days, fully integrated with the Calendar view.
+| Channel     | Scope           | Input Control                                  | Stored As                                              |
+|-------------|-----------------|------------------------------------------------|--------------------------------------------------------|
+| **Energy**  | Built-in        | Slider, 1–10 (default 5)                       | `{ type:'energy',  value: 7 }`                         |
+| **Emotion** | Built-in        | Multi-select pill row (pos/neg)                | `{ type:'emotion', value: 'e_happy' }` (one per tag)   |
+| **Symptom** | Built-in        | Per-symptom row + severity (Mild / Mod / Sev)  | `{ type:'symptom', value: 's_headache', severity:'severe' }` |
+| **Activity**| Built-in        | Multi-select pill row                          | `{ type:'activity', value: 'a_caffeine' }` (one per tag)|
+| **Note**    | Built-in        | Plain-text textarea                            | `{ type:'note', value: '…' }`                          |
+| **Sleep**   | Built-in (V6)   | Slider, 0–12 (step 0.5, default 7)             | `{ type:'sleep', value: 7.5 }` (hours)                  |
+| **Custom**  | User-defined (V6)| Scale slider / On-Off toggle / Note textarea  | `{ type: '<catId>', value: <appropriate> }`            |
 
-#### B. Channel Picker (New UI in V3)
-Each Save produces **a single logged thing**. The user first picks *what* they are logging, then enters the value in the appropriate panel. Five channels:
+A custom category is created by calling `addCustomCategory(name, color, type, scaleMin?, scaleMax?)`. The V6 lifecycle guarantees every custom category is registered into `ENTRY_TYPES` + `CHANNEL_LABEL` + the Stream filter map, so it becomes loggable from the Log tab, visible in the Stream grid, and color-resolvable everywhere — without bespoke schema wiring for each new channel.
 
-| Channel     | Input Control                     | Stored As                            |
-|-------------|-----------------------------------|--------------------------------------|
-| **Energy**  | Slider, 1–10 (default 5)          | `{ type:'energy',  value: 7 }`       |
-| **Emotion** | Multi-select pill row (pos/neg)   | `{ type:'emotion', value: 'e_happy' }` (one entry per selected tag) |
-| **Symptom** | Per-symptom row + severity (Mild / Mod / Sev) | `{ type:'symptom', value: 's_headache', severity:'severe' }` |
-| **Activity**| Multi-select pill row             | `{ type:'activity', value: 'a_caffeine' }` (one entry per selected tag) |
-| **Note**    | Plain-text textarea               | `{ type:'note', value: '…' }`        |
+#### 2.1a Channel Picker + Inline Category Builder (V6.5)
 
-A multi-select Save (e.g. select Happy + Motivated) generates **two parallel entries** stamped with the same date+time. This preserves the V2 semantics of "I felt several things at once" while keeping each downstream record a single atomic event.
+Beneath the channel picker (the 6-7 chip row that lets the user pick what to log *now*), a single dashed-bordered `+ New custom category` pill sits. On tap, an inline-builder sheet expands *in place* (no Settings navigation required):
 
-#### C. Sticky Save Pill (New in V3)
-The **Save Entry** button is no longer inline at the bottom of the form. It is rendered as a **floating pill** anchored to `bottom = nav + 8px + safe-area-inset-bottom`. It is always visible regardless of form length, so the user never has to scroll to confirm a Save.
+- **Name input** — single text field, max 30 chars, blank/duplicate rejected.
+- **6 color swatches** — Terracotta, Sage, Dusty Blue, Mocha, Brick, Deep Amber. One is selected at a time and lifted with a terracotta stroke ring (`.builder-swatch.on`).
+- **3-way type segmented control** — Scale / On/Off / Note. Selecting Scale slides down Min + Max numeric inputs; the other two hide the row.
+- **Cancel / Save** buttons in a 50/50 split at the bottom. Save is disabled (visual flicker on the name field border) for duplicates.
 
-#### D. Custom Descriptor Customization & Category Management
-Carried forward from V2 with no behavioural change. Users can add text labels and assign valence (Positive / Negative) for emotions, and define custom symptom or activity names. Deletion preserves historical signal via fallback sentinel ids (`fallback_positive`, `fallback_negative`, `fallback_symptom`, `fallback_activity`).
+On Save, the category is registered into `state.userSettings.customCategories`, pushed into `ENTRY_TYPES`, set in `CHANNEL_LABEL`, optionally seeded into `streamFilters`, persisted to `localStorage`, after which:
+1. The picker is re-rendered — the new chip appears in the row.
+2. `currentChannel` is auto-set to the new category's id.
+3. The form closes and the per-channel panel flips to the new category's panel (slider for Scale, On/Off toggle for Binary, textarea for Note).
 
-### 2.2 Continuous-Flow Calendar View (Revised in V3)
+This brings the discoverability problem (V6's Settings-only builder hidden behind a tab nobody visits while logging) directly into the active logging flow.
 
-To replace the V2 "stack of five separate month blocks" with something the eye can actually scan continuously, V3 ships a **single seamless 7-col grid** that crosses month boundaries without section breaks.
+### 2.2 Continuous-Flow Calendar View (V3)
 
-* **Continuous day-number grid:** the calendar renders one uninterrupted grid spanning `today − 2 months` → `today + 3 months`. Leading empty days are back-filled to Sunday so the first row of every partial month is padded, then the next month begins on the same row at the appropriate weekday column.
-* **Single sticky month label:** rather than a sticky month title per section, the entire view carries *one* small sticky label whose text is updated via an `IntersectionObserver` whenever the user scrolls a month's first cell into the visible strip. Avoids scroll-handler jank from `offsetTop` reads.
-* **Visual indicators on each day cell:** bold day number, today = solid terracotta circle (was Apple red — recoloured under warm palette), small peach→terracotta energy bar at the bottom, accumulator valence dots (max 2: sage for any positive, dusty-rose for any negative), and a single warm brick-red `!` pip in the top-right if any moderate/severe symptom was logged that day.
-* **Tap to inspect:** opens the day-detail modal (see 2.4).
-* **Scrolling keeps you oriented:** the calendar scrolls vertically a few months in either direction; the sticky weekday header + month label sit over the grid at `top: 0` / `top: 44px` respectively, both `backdrop-blur-md` against the cream background.
+Unchanged from V3: a single seamless 7-col grid that crosses month boundaries. Today = terracotta circle (was Apple red). Tap any cell to inspect via the day-modal.
 
-### 2.3 Insights & Trend Graphics
+### 2.3 History / Timeline (Unchanged V3–V4.5; new V5 + V6.4 polish)
 
-Carried forward from V2 with a palette refresh:
+Four modes selectable via a pill switcher in the History view's header:
 
-* **Energy Over Time** — pure SVG, no dependencies. The trend line and points use the warm accent (`--ls-accent-deep`) over a peach gradient fill. Gridlines shift from `#e5e7eb` (cool slate) to `#ECE3D0` (cream-deep).
-* **Stat cards** at the bottom — Average Energy, Positive tag count, Negative tag count, Days with data. Tones are now accent terracotta / sage / dusty-rose / ink-warm.
+| Mode         | Renderer                  | Replaces                                  |
+|--------------|---------------------------|--------------------------------------------|
+| **Month**    | `renderContinuousCalendar` | V2 stacked-month grid                     |
+| **List**     | `renderSeamlessTimeline`   | V2 linear timeline with per-day sections    |
+| **Day**      | `renderDayTimeline`       | (V5) A horizontal day-by-day swimlane      |
+| **Kanban**   | `renderKanbanTimeline`    | (V4) 5-lane column swimlanes                |
+| **Stream**   | `renderStreamTimeline`    | (V5) Time-rows × Category-columns grid     |
 
-### 2.4 Day-Detail Modal & Timeline
+**Stream mode (V5) visual story:** the timeline is time-rooted, not activity-rooted. 24 hour-rows stack vertically (top→bottom 00:00 → 23:59); 5+ category columns (Energy / Emotion / Symptom / Activity / Sleep + each user's custom category) sit side-by-side horizontally. Each (time-row, category-column) cell contains a stack of small dots whose `opacity` encodes severity/value, so a glance down the Sleep column tells you when you typically sleep. Filter chips at the top let the user hide columns. A sticky day-stepper lets the user traverse days without scrolling into the grid.
 
-Two views share the underlying per-entry stream:
+**V6.4 polish on Stream:** each row receives a subtle linear-gradient background tied to its hour-of-day (dawn 5–7 peach, morning 8–11 gold cream, afternoon 12–16 neutral cream, dusk 17–20 amber wash, night deep navy-warm). The timeline now *visually breathes time* without screaming for attention.
 
-* **Day modal** — bottom-sheet expanding from the bottom of the viewport. Each entry is its own row: time on the left, color-coded category dot in the center, type-tinted card on the right, **Del** button on the far right.
-* **History / Timeline** — a chronological feed of every entry ever logged. One row per entry. The card background is **heavily tinted by category** so the user sees vertical "ribbons" of colour while scrolling: energy blocks (peach), emotion-pos blocks (sage), emotion-neg blocks (dusty rose), symptom blocks (yellow / amber / brick based on severity), activity blocks (dusty blue), note blocks (mocha cream).
-* **Sticky date pills** anchored at `top: 0` interrupt the connecting thread visually via `backdrop-blur-md` but don't break the layout. Each pill carries the weekday + month-day and an entry count for that day.
+**V6.4 polish on Log:** all `#channel-picker` chips lift 1px with a soft shadow on hover (Apple-HIG 44 px touch targets preserved).
+
+### 2.4 Insights & Trend Graphics (V5 + V6.5 curation)
+
+**3 sub-tabs:** Trends, Patterns (Calendar sub-tab was retired in V6.5 because it overlapped with the Month calendar view; `renderCalendarSeverityMap` dropped from the registry).
+
+#### 2.4a Insights Summary Card (V6.5 simplification)
+
+Replaced the V4 four-card grid (Avg Energy / Positive tags / Negative tags / Days logged) with **two huge 44 px-black headlines**:
+- **Average Energy** — colour-coded (deep amber ≥7, terracotta 4–6, brick <4). Reads instantly on first glance.
+- **Your Best Day** — auto-detects the day-of-week with the highest average energy, requires >=7 days of energy entries to surface a name.
+
+#### 2.4b Trends tab (V6.5 curation)
+
+| Card | Verdict (V6.5) | Why |
+|------|----------------|-----|
+| ~~`renderEnergyTrendChart`~~ | **DROPPED** | A line of dots over time just shows time passing; the same dots already appear in the Stream grid. |
+| ~~`renderMultiAxisChart`~~    | **DROPPED** | Stacked axes force the user to do the analytical heavy-lifting; over-engineered. |
+| `renderDayOfWeekChart`        | **KEPT + ENHANCED** | Compresses time; one glance shows your weekly pattern + auto-highlights best/worst day. |
+| `renderRoutineImpact` (NEW)   | **NEW**           | For every activity: average energy + positive-emotion ratio on days WITH vs days WITHOUT. Surfaces the headline insight *"You feel +1.8 energy on days you log Workout"*. |
+
+#### 2.4c Patterns tab (V6.5 curation)
+
+| Card | Verdict (V6.5) | Why |
+|------|----------------|-----|
+| `renderTopInfluencers`        | **KEPT + ENHANCED** | Actionable discovery vehicle; cards state the delta in plain language. |
+| `renderBehavioralCorrelationGrid` | **KEPT + ENHANCED** | Stronger heat-map gradient; pops high-impact cells instantly. |
+| `renderTimeToEffect` (NEW)    | **NEW**           | For every (activity, symptom) pair: count how often the symptom occurs within 120 min after the activity. Surfaces the temporal headline *"70% of your severe headaches fall within 2 hours of Caffeine"*. |
+| `renderSymptomCooccurrenceChart` | **KEPT**       | Useful for users tracking health cascades; smaller footprint, lower visual weight. |
+
+#### 2.4d [Retired sub-tab] Calendar
+
+`renderCalendarSeverityMap` was identical information to what the Month calendar already shows. Dropped entirely; the Month view IS the calendar insight.
+
+### 2.5 Day-Detail Modal & Timeline (V3 + V4 polish — unchanged from V6)
+
+Unchanged: bottom-sheet modal with per-entry rows (time + colored dot + tinted card + Del button), staggered date pills in the vertical Timeline feed with backdrop-blur cream over a thread.
+
+### 2.6 Settings Engine (V6 extension)
+
+Carried forward from V3/V4 with no behavioural change:
+- Custom Emotions list (multi-row + add form + valence pill).
+- Custom Symptoms list (multi-row + add form).
+- Custom Activities list (multi-row + add form).
+- **NEW (V6): Custom Categories list** — full CRUD for the extensible category registry used by both the Inline Builder in Log and the Settings panel itself. Deletion preserves historical signal via the `fallback_custom: 'Deleted Custom Category'` sentinel.
+- Theme picker + Accent picker (V4).
 
 ---
 
 ## 3. Technical Specifications & Design System
 
-### 3.1 Visual System — Warm Honey/Cream Palette (New in V3)
+### 3.1 Visual System — Warm Honey/Cream Palette (V3; refined V6.4/V6.5)
 
-The V2 palette (pure white / Apple-blue / Apple-red / Apple-green) was clean but read as "clinical". V3 swaps it for **"morning sun on a kitchen table"**: warm cream backgrounds, terracotta accents, sage for positive emotion, dusty-rose for negative, dusty-blue for activity, mocha for note. Peak energy still goes warm brick-red so it reads as "you're on fire 🥵", not as an error.
+Unchanged V3 palette + V4 cat-* classes + V6 `cat-sleep` (dusty blue tint `#D7E4EF`) + V6.4 tod-* row gradients + V6.5 builder-swatch ring + V6.5 stat-headline 44 px-black.
 
-| Token                  | Hex       | Used For                                          |
-|------------------------|-----------|---------------------------------------------------|
-| `--ls-bg`              | `#FAF6EE` | Page background (body)                            |
-| `--ls-cream-soft`      | `#F5EFE3` | Section backgrounds, sticky pill backgrounds     |
-| `--ls-cream-deep`      | `#ECE3D0` | Rules, dividers, weekday header, sticky borders   |
-| `--ls-ink`             | `#3D3548` | Primary text (warm plum, not stark black)         |
-| `--ls-ink-soft`        | `#6E5E5E` | Secondary text                                    |
-| `--ls-ink-mute`        | `#A0876A` | Tertiary text (mocha)                             |
-| `--ls-accent`          | `#D89B5C` | Tertiary brand accent — Today circle, primary CTA |
-| `--ls-accent-deep`     | `#B47A3C` | CTA stroke, text on cream-tinted backgrounds      |
+### 3.2 Phone-First Layout Rules (V3; refined V4.1)
 
-Category tints are declared once in `styles.css` (`.cat-energy`, `.cat-pos`, `.cat-neg`, `.cat-mild`, `.cat-mod`, `.cat-sev`, `.cat-activity`, `.cat-note`) so a future palette tweak only edits one place. JS references them by name from a `CAT_CARD_CLASS` map.
+1. **Safe-area insets** via `pt-safe` / `pb-safe` utilities.
+2. **Touch targets ≥44 pt**: channel chips, severity buttons, builder swatches (36 px circle), builder segmented buttons all clear the bar.
+3. **One primary action per view**, but now with discoverable secondaries (the `+ New custom category` pill sits beneath the channel picker without stealing focus from the channel itself).
 
-### 3.2 Phone-First Layout Rules (New in V3)
-
-The V3 layout follows three rules borrowed from the Apple "Compact, Clear, Accessible" HIG:
-
-1. **Safe-area insets are mandatory.** The header uses `padding-top: max(env(safe-area-inset-top), 12px)` (via the `pt-safe` utility), and the bottom-nav uses `padding-bottom: env(safe-area-inset-bottom)` (via `pb-safe`). The Save pill sits at `bottom: env(safe-area-inset-bottom) + 64px` so it floats above the nav + home indicator.
-2. **Touch targets ≥ 44pt where state-bearing.** Channel chips, emotion pills, activity pills, and severity buttons all use `py-2.5` (10px) plus a `rounded-2xl` shape; combined with the cream-tinted padding they comfortably hit ≥44pt even at small iPhone widths.
-3. **One primary action visible per view.** Log shows the Save pill floating above the form. History shows the open-modal trigger (tap a day). Insights shows the chart. Settings shows the "+" buttons next to the relevant input.
-
-### 3.3 Local Storage Schema & Migration (Updated for V3)
-
-The persisted payload is one JSON blob under the `lifesync_data` key:
+### 3.3 Local Storage Schema & Migration (V3 → V6.5)
 
 ```json
 {
   "userSettings": {
     "customEmotions":   [{ "id": "e_happy", "name": "Happy", "valence": "positive" }, …],
     "customSymptoms":   [{ "id": "s_headache", "name": "Headache" }, …],
-    "customActivities": [{ "id": "a_caffeine", "name": "Caffeine" }, …]
+    "customActivities": [{ "id": "a_caffeine", "name": "Caffeine" }, …],
+    "customCategories": [{ "id": "sleep",     "name": "Sleep", "type": "scale", "scaleMin": 0, "scaleMax": 12, "color": "#7C9CB1" }, …],
+    "preferences": {
+      "theme":         "warm-cream",
+      "accent":        "terracotta",
+      "insightsRange": "all",
+      "insightsTab":   "trends",
+      "streamDate":    "<today's YYYY-MM-DD>",
+      "streamFilters": { "energy": true, "emotion": true, "symptom": true, "activity": true, "note": true, "sleep": true, "<customId>": true }
+    }
   },
   "dailyLogs": [
     { "id": "log_…", "date": "2026-07-22T08:30", "type": "energy",   "value": 7 },
-    { "id": "log_…", "date": "2026-07-22T08:31", "type": "emotion",  "value": "e_happy" },
-    { "id": "log_…", "date": "2026-07-22T08:32", "type": "symptom",  "value": "s_headache", "severity": "moderate" },
-    { "id": "log_…", "date": "2026-07-22T08:33", "type": "activity", "value": "a_caffeine" },
-    { "id": "log_…", "date": "2026-07-22T11:00", "type": "note",     "value": "Strong morning." }
+    { "id": "log_…", "date": "2026-07-22T22:30", "type": "sleep",    "value": 7.5 },
+    { "id": "log_…", "date": "2026-07-22T13:30", "type": "a_workout_or_userCu_xxx", "value": "a_workout" },
+    …
   ],
-  "meta": { "seeded": true, "migratedToV3": true }
+  "meta": { "seeded": true, "migratedToV3": true, "migratedToV4": true }
 }
 ```
 
-#### V2 → V3 Migration (one-time, idempotent)
-On load, if `meta.migratedToV3` is not set, every V2 *daily card* is exploded into one entry per channel:
-- `log.energy` (number) → `{ type:'energy', value }`
-- `log.emotions[]` → `{ type:'emotion', value }` per id
-- `log.symptoms[]` → `{ type:'symptom', value, severity }` per id
-- `log.activities[]` → `{ type:'activity', value }` per id
-- `log.notes` (non-empty string) → `{ type:'note', value }`
-
-After the explode, `meta.migratedToV3 = true` is persisted so subsequent loads are no-ops.
+#### V2 → V3 + V4 migrations carry forward as before. V6.5 is additive (no schema break).
 
 ### 3.4 Offline PWA Engine
 
-Unchanged from V2 — `manifest.json` declares `standalone` display and is sufficient for "Add to Home Screen" on iOS. All rendering and chart math is local; no network calls.
+Unchanged: `manifest.json` standalone, all rendering + chart math local, no network calls.
 
 ---
 
-## 4. Touchpoints That Changed in V3 (Quick Reference)
+## 4. Touchpoints That Changed in Each Release (Quick Reference)
 
-| Area                       | V2                                         | V3                                                                  |
-|----------------------------|--------------------------------------------|---------------------------------------------------------------------|
-| Log form                   | One form, one Save, bundle it all          | Channel picker + 5 panels, one channel, one (or N) entries per Save |
-| Save button                | Inline at bottom of form                   | Floating pill anchored above bottom nav                             |
-| Calendar month headings    | One sticky title per stacked month         | One sticky title for the entire view, updates on scroll             |
-| Calendar today circle      | Apple red `#ff3b30`                        | Warm terracotta accent `#D89B5C`                                    |
-| Energy color ramp          | Apple-blue monochrome                      | Peach → terracotta → brick red                                      |
-| Timeline cards             | Uniform white background                   | Category-tinted backgrounds form visual ribbons                     |
-| Bottom nav / Header        | Apple blue + white                         | Cream + warm ink + terracotta accent                                |
-| Overall mood               | Clinical/Apple                             | Warm/morning-kitchen                                                |
+| Area                       | V3                                 | V4                                 | V5                                  | V6                                  | V6.5                                                              |
+|----------------------------|------------------------------------|------------------------------------|-------------------------------------|-------------------------------------|-------------------------------------------------------------------|
+| Log form                   | Channel picker + 5 panels          | (unchanged)                        | (unchanged)                         | + Sleep as 6th channel              | + inline `+ New custom category` builder                            |
+| Channel picker hover        | (none)                            | (none)                              | (none)                              | (none)                              | 1 px lift + soft shadow on inactive chips                          |
+| History modes              | 2 (Month, List)                    | 4 (Month, List, Day*, Kanban*)     | 5 (+ Stream)                        | (unchanged)                         | tod-* AM/PM whisper gradient on Stream rows                       |
+| Save button                | Inline? Floating pill              | Floating pill (V4.1 nav-fitting)   | (unchanged)                         | (unchanged)                         | (unchanged)                                                       |
+| Insights cards             | Energy trend + summary             | + 3 new charts                     | 3-tab restructure (V5)             | (unchanged)                         | **Curation**: drop redundant + add 2 new cards; massive-typography summary |
+| Settings — Custom Categories | (none)                          | (none)                              | (none)                              | Add via bottom-of-Settings form      | Same form also surfaced inline in Log view                          |
+| Bottom nav / Header        | Cream + terracotta                 | (unchanged)                        | (unchanged)                         | (unchanged)                         | (unchanged)                                                       |
+| Overall mood               | Warm morning kitchen               | Warm morning kitchen              | Warm morning kitchen + time-aware    | + extensible                         | + discoverable + curated                                           |
+
+---
+
+## 5. Design Intuition Notes (for the curious)
+
+A few rules of thumb the assistant held to while designing V6.5. These are not in the code per se but shape decisions across rounds:
+
+- **Cards earn their keep** by showing patterns the user couldn't see by reading rows. Generic aggregations are noise near the Timeline view.
+- **Discoverability** is more important than organization. A feature that *exists* but is *hidden* does not exist to the user mid-task.
+- **Massive typography first, fine print second**. Phone screens reward one wall-of-a-number headlines over grids of small stats.
+- **Time-rooted, not activity-rooted**. The Stream view's "time is the spine, activities hang off it" framing is the canvas for everything time-driven in this app.
+
+---
+
+*End of V6.5 PRD.*

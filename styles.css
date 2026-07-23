@@ -35,7 +35,7 @@
 
 /* Phone-first: respect iPhone notch + Dynamic Island on top, home indicator on bottom. */
 .pt-safe { padding-top:    max(env(safe-area-inset-top),    12px); }
-.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 6px); }
 .mb-safe { margin-bottom:  max(env(safe-area-inset-bottom), 12px); }
 
 /* Hide scrollbars while remaining scrollable. */
@@ -65,8 +65,60 @@
 .cat-mild     { background: #F4EDA0; border-color: #D9B859; }
 .cat-mod      { background: #F8D0A5; border-color: #D8965A; }
 .cat-sev      { background: #F4B9A6; border-color: #C56A52; }
-.cat-activity { background: #E9EEF6; border-color: #C3CCDE; }
-.cat-note     { background: #F0E7D9; border-color: #DCC9AC; }
+.cat-activity { background: #E9EEF6; border-color: #C3CCDE; }.cat-note { background: #F0E7D9; border-color: #DCC9AC; }
+.cat-sleep { background: #D7E4EF; border-color: #B6C7D6; }
+.cat-custom-deleted { background: #F0E7D9; border-color: #DCC9AC; border-style: dashed; }
+
+/* Time-of-day whisper on Stream rows. Each band paints a very subtle gradient
+   so the timeline visually evokes daylight without screaming for attention.
+   Alpha ~0.06 — present but quiet. */
+.stream-row.tod-dawn      { background: linear-gradient(180deg, rgba(248, 198, 152, 0.10), rgba(248, 198, 152, 0.04)); }
+.stream-row.tod-morning   { background: linear-gradient(180deg, rgba(248, 215, 168, 0.08), rgba(248, 215, 168, 0.03)); }
+.stream-row.tod-afternoon { background: linear-gradient(180deg, rgba(236, 227, 208, 0.05), rgba(236, 227, 208, 0.02)); }
+.stream-row.tod-dusk      { background: linear-gradient(180deg, rgba(232, 156, 91,  0.07), rgba(232, 156, 91,  0.03)); }
+.stream-row.tod-night     { background: linear-gradient(180deg, rgba(60,  68,  90,  0.06), rgba(60,  68,  90,  0.02)); }
+
+/* Channel-picker hover lift — makes selection feel tactile without stealing focus.
+   RenderChannelPicker toggles active vs inactive via Tailwind bg utilities (no
+   `.on` class), so we just use the bare :hover. The active chip still feels
+   anchored because it already carries a stronger shadow + filled background. */
+#channel-picker button {
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+#channel-picker button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(110, 94, 94, 0.08);
+}
+
+/* V6.5 — Insights massive-typography headlines + inline category-builder styles. */
+.stat-headline {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    font-size: 44px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.03em;
+}
+.builder-swatch {
+    width: 36px;
+    height: 36px;
+    border-radius: 9999px;
+    border: 2px solid #FAF6EE;
+    box-shadow: 0 0 0 1px #ECE3D0;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+    cursor: pointer;
+}
+.builder-swatch:active { transform: scale(0.94); }
+.builder-swatch.on {
+    box-shadow: 0 0 0 3px #B47A3C;
+    transform: translateY(-1px);
+}
+.builder-type-btn {
+    transition: background-color 0.12s ease-out, color 0.12s ease-out;
+}
+.builder-type-btn.on {
+    background-color: #D89B5C !important;
+    color: white !important;
+}
 
 /* Body bg - set explicitly so Tailwind's `bg-...` utilities don't override. */
 html, body          { background: var(--ls-bg); }
@@ -319,6 +371,56 @@ input[type="color"][data-selected="true"] {
     transform: scale(0.96);
 }
 
+/* =============================================================================
+   V5 Stream-view + Insights-tabs styles.
+   ============================================================================= */
+
+/* Stream — day-stepper bar (sticky under header) */
+.stream-host          { padding-bottom: 24px; min-height: 100%; }
+.stream-stepper       { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: var(--ls-bg-soft); border-bottom: 1px solid var(--ls-bg-deep); backdrop-filter: blur(8px); }
+.stream-arrow        { width: 44px !important; height: 44px !important; min-width: 44px; min-height: 44px; border-radius: 50%; background: white; border: 1px solid var(--ls-bg-deep); color: var(--ls-ink); font-size: 22px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.06s ease; }
+.stream-arrow:active { transform: scale(0.92); }
+.stream-today-btn    { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--ls-bg-deep); background: white; color: var(--ls-accent); display: inline-flex; align-items: center; justify-content: center; }
+.stream-today-btn:active { background: var(--ls-bg-soft); }
+.stream-date-label   { font-size: 16px; font-weight: 800; color: var(--ls-ink); letter-spacing: -0.01em; }
+.stream-date-sub     { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ls-ink-mute); margin-top: 2px; }
+
+/* Channel filter chips bar */
+.stream-chips        { position: sticky; top: 64px; z-index: 20; display: flex; gap: 6px; padding: 8px 12px; background: var(--ls-bg-soft); border-bottom: 1px solid var(--ls-bg-deep); overflow-x: auto; scrollbar-width: none; }
+.stream-chips::-webkit-scrollbar { display: none; }
+.stream-chip         { flex: 1; min-width: 0; min-height: 44px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--ls-bg-deep); background: white; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ls-ink-mute); cursor: pointer; transition: all 0.1s ease; display: flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stream-chip.on      { background: var(--chip-color); color: white; border-color: transparent; box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset; }
+.stream-chip.off     { opacity: 0.55; }
+.stream-chip:active  { transform: scale(0.97); }
+.chip-dot            { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+
+/* Column header row (sticky under the chips) */
+.stream-col-header   { position: sticky; top: 108px; z-index: 15; display: grid; grid-template-columns: 44px repeat(var(--col-count, 5), minmax(0, 1fr)); gap: 0; padding: 8px 0; background: var(--ls-bg-soft); border-bottom: 1px solid var(--ls-bg-deep); }
+.stream-time-head    { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ls-ink-mute); text-align: right; padding-right: 6px; padding-left: 4px; }
+.stream-col-head-cell { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ls-ink); text-align: center; padding: 4px 0; display: flex; align-items: center; justify-content: center; gap: 5px; border-left: 1px solid var(--ls-bg-deep); }
+
+/* 24-hour time-rows grid */
+.stream-grid         { display: block; }
+.stream-row          { display: grid; grid-template-columns: 44px repeat(var(--col-count, 5), minmax(0, 1fr)); align-items: stretch; min-height: 56px; border-bottom: 1px solid var(--ls-bg-deep); }
+.stream-row.major    { border-bottom-color: var(--ls-ink-mute); }
+.stream-time         { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ls-ink-mute); text-align: right; padding: 4px 6px 0 4px; border-right: 1px solid var(--ls-bg-deep); }
+.stream-cell         { position: relative; min-height: 56px; min-width: 44px; border-left: 1px solid var(--ls-bg-deep); cursor: default; }
+.stream-cell.has-data { cursor: pointer; background: rgba(216, 155, 92, 0.04); }
+.stream-cell.has-data:active { background: rgba(216, 155, 92, 0.10); }
+.stream-cell.empty   { background: transparent; }
+[data-theme="dim-warm"] .stream-cell.has-data { background: rgba(216, 155, 92, 0.08); }
+.stream-dot          { position: absolute; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 1px 2px rgba(0,0,0,0.18); }
+.stream-more         { position: absolute; right: 4px; bottom: 3px; font-size: 9px; font-weight: 800; color: var(--ls-ink); background: white; padding: 1px 4px; border-radius: 6px; border: 1px solid var(--ls-bg-deep); }
+.stream-all-off      { padding: 32px 16px; text-align: center; font-size: 14px; font-weight: 600; color: var(--ls-ink-mute); }
+.stream-summary      { display: flex; gap: 6px; padding: 10px 8px 4px 8px; flex-wrap: wrap; }
+.stream-summary-cell { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--ls-bg-deep); background: white; font-size: 11px; font-weight: 700; color: var(--ls-ink); }
+.stream-summary-cell strong { font-size: 14px; font-weight: 900; color: var(--chip-color); }
+
+/* Insights tabs */
+.insights-tabs       { display: flex; gap: 4px; padding: 4px; background: var(--ls-bg-soft); border-radius: 12px; border: 1px solid var(--ls-bg-deep); }
+.insights-tab-btn    { flex: 1; padding: 9px 4px; border-radius: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ls-ink-mute); background: transparent; border: none; cursor: pointer; transition: all 0.1s ease; }
+.insights-tab-btn.on { background: white; color: var(--ls-ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.insights-tab-btn:active { transform: scale(0.98); }
 /* =============================================================================
    Insights view V4.1 — Top 3 Influencers, Calendar Heatmap, Multi-axis Chart,
    Inline Sparklines, Day-of-Week Pattern.

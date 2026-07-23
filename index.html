@@ -54,6 +54,7 @@
                 <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">List</button>
                 <button onclick="setCalendarMode('day')"      id="btn-mode-day"      class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Day</button>
                 <button onclick="setCalendarMode('kanban')"   id="btn-mode-kanban"   class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Lane</button>
+                <button onclick="setCalendarMode('stream')"   id="btn-mode-stream"   class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]">Stream</button>
             </div>
         </div>
     </header>
@@ -77,6 +78,42 @@
             <div class="space-y-3">
                 <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">What are you logging?</label>
                 <div id="channel-picker" class="flex gap-2"></div>
+                <button id="builder-open-btn" onclick="openInlineCategoryBuilder()" class="w-full mt-2.5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-white border border-dashed border-[#D89B5C]/40 text-[#B47A3C] active:scale-95 transition">
+                    <span class="text-[14px] font-black">+</span>&nbsp;&nbsp;New custom category
+                </button>
+                <div id="inline-builder" class="hidden mt-3 p-4 rounded-2xl bg-[#FAF1D9] border border-[#ECD9A0] shadow-soft space-y-3">
+                    <div>
+                        <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A] mb-1.5">Name</label>
+                        <input id="inline-builder-name" type="text" placeholder="e.g. Steps" maxlength="30" class="w-full bg-white border border-[#ECE3D0] rounded-xl px-3 py-2.5 text-[14px] text-[#3D3548] focus:outline-none placeholder:text-[#A0876A]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A] mb-1.5">Color</label>
+                        <div id="inline-builder-swatches" class="flex gap-2"></div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A] mb-1.5">Type</label>
+                        <div class="flex rounded-xl bg-white border border-[#ECE3D0] overflow-hidden text-[12px] font-black">
+                            <button type="button" id="builder-type-scale"  onclick="pickBuilderType('scale')"  class="builder-type-btn flex-1 py-2.5 text-[#6E5E5E]">Scale</button>
+                            <button type="button" id="builder-type-binary" onclick="pickBuilderType('binary')" class="builder-type-btn flex-1 py-2.5 text-[#6E5E5E]">On/Off</button>
+                            <button type="button" id="builder-type-note"   onclick="pickBuilderType('note')"   class="builder-type-btn flex-1 py-2.5 text-[#6E5E5E]">Note</button>
+                        </div>
+                        <input id="inline-builder-type" type="hidden" value="scale">
+                    </div>
+                    <div id="inline-builder-scale" class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-[#A0876A] mb-1">Min</label>
+                            <input id="inline-builder-min" type="number" value="0" class="w-full bg-white border border-[#ECE3D0] rounded-xl px-3 py-2 text-[14px] text-[#3D3548] focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-[#A0876A] mb-1">Max</label>
+                            <input id="inline-builder-max" type="number" value="10" class="w-full bg-white border border-[#ECE3D0] rounded-xl px-3 py-2 text-[14px] text-[#3D3548] focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button type="button" onclick="closeInlineCategoryBuilder()" class="flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest bg-white border border-[#ECE3D0] text-[#6E5E5E] active:scale-95 transition">Cancel</button>
+                        <button type="button" onclick="saveInlineCategory()" class="flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest bg-[#D89B5C] text-white border border-[#B47A3C] shadow-soft active:scale-95 transition">Save</button>
+                    </div>
+                </div>
             </div>
 
             <!-- ENERGY panel (default visible) -->
@@ -123,13 +160,27 @@
                 <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Notes <span class="text-[#ECE3D0] normal-case font-medium">(one note per save)</span></label>
                 <textarea id="log-notes" rows="3" placeholder="Anything noteworthy…" class="w-full bg-white border border-[#ECE3D0] rounded-2xl p-4 text-[#3D3548] font-medium focus:outline-none resize-none placeholder:text-[#A0876A]"></textarea>
             </div>
+
+            <!-- SLEEP panel (V6) -->
+            <div data-channel-panel="sleep" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Hours Slept</label>
+                    <span id="sleep-value" class="text-xl font-black text-[#3D5470]">7.0h</span>
+                </div>
+                <input type="range" id="log-sleep" min="0" max="12" step="0.5" value="7" class="w-full h-2.5 bg-[#ECE3D0] rounded-lg appearance-none cursor-pointer accent-[#7C9CB1]" oninput="updateSleepDisplay(this.value)">
+                <div class="flex justify-between text-[10px] font-bold text-[#A0876A] px-1">
+                    <span>0h</span>
+                    <span>6h</span>
+                    <span>12h</span>
+                </div>
+            </div>
         </section>
 
         <!-- Sticky floating Save pill. Lives outside of <section id="view-log">
              so we can absolutely-position it; toggled visible only when on the
              Log tab via switchTab().
              bottom offset = bottom-nav height (3rem ~= 56px) + 8px gap + safe inset. -->
-        <div id="log-save-bar" class="fixed inset-x-0 z-40 flex justify-center pointer-events-none" style="bottom: calc(env(safe-area-inset-bottom) + 64px)">
+        <div id="log-save-bar" class="fixed inset-x-0 z-40 flex justify-center pointer-events-none" style="bottom: calc(env(safe-area-inset-bottom) + 60px)">
             <button onclick="saveCurrentLog()" id="log-save-btn"
                     class="pointer-events-auto w-[88%] max-w-md text-white font-black py-4 rounded-2xl shadow-soft transition active:scale-[0.98] border border-[#B47A3C]"
                     style="background-color:#D89B5C">
@@ -211,6 +262,24 @@
                 <div id="settings-activities-list" class="divide-y divide-[#ECE3D0] border-t border-[#ECE3D0] mt-4 pt-2"></div>
             </div>
 
+            <!-- Custom Categories (V6) — user can create their own categories.
+                 Saved to state.userSettings.customCategories. -->
+            <div class="space-y-3 pt-4 border-t border-[#ECE3D0]">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Custom Categories</h3>
+                <p class="text-[11px] text-[#A0876A] -mt-1">Add your own tracking category (e.g., Hydration, Steps, Caffeine-free days).</p>
+                <div class="flex gap-2 items-center">
+                    <input type="text" id="new-category-name" placeholder="Name" class="flex-grow bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-semibold">
+                    <input type="color" id="new-category-color" value="#7C9CB1" class="w-12 h-12 rounded-xl border border-[#ECE3D0] cursor-pointer bg-transparent" aria-label="Category color">
+                    <select id="new-category-type" class="bg-white border border-[#ECE3D0] rounded-2xl p-3 focus:outline-none font-bold text-sm">
+                        <option value="scale">Scale 0–10</option>
+                        <option value="binary">Tap on/off</option>
+                        <option value="note">Free text</option>
+                    </select>
+                    <button onclick="addCustomCategory()" class="text-white px-5 rounded-2xl font-black shadow-soft border border-[#B47A3C]" style="background-color:#D89B5C">+</button>
+                </div>
+                <div id="custom-categories-list" class="divide-y divide-[#ECE3D0] border-t border-[#ECE3D0] mt-4 pt-2"></div>
+            </div>
+
             <div class="space-y-3 pt-4 border-t border-[#ECE3D0]">
                 <h3 class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Data</h3>
                 <button onclick="resetAllData()" class="w-full bg-[#F8E6E3] border border-[#E9C8C4] text-[#C44033] active:bg-[#F0D2CD] font-bold py-3 rounded-2xl text-sm">
@@ -256,7 +325,7 @@
     <!-- ============================= BOTTOM NAV ============================= -->
     <!-- Cream-tinted, ink-warm tabs. Active tab = terracotta accent. pb-safe
          honours the iPhone home-indicator. -->
-    <nav class="bg-[#FAF6EE]/90 backdrop-blur-md border-t border-[#ECE3D0] flex justify-around py-2.5 px-2 shrink-0 z-30 pb-safe">
+    <nav class="bg-[#FAF6EE]/90 backdrop-blur-md border-t border-[#ECE3D0] flex justify-around py-1.5 px-2 shrink-0 z-30 pb-safe">
         <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1" id="btn-log" style="color:#D89B5C">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
             <span class="text-[10px] font-bold">Log</span>

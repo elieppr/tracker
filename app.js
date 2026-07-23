@@ -43,12 +43,22 @@ const DEFAULT_ACTIVITIES = [
     { id: "a_meditation",  name: "Meditation" }
 ];
 
+// V6: extensible categories beyond the fixed 5 hardcoded channels. Sleep is
+// the first shipped example. Each category has a value `type`:
+//   - 'scale' : numeric `value` in [scaleMin, scaleMax] (e.g. Energy 1-10, Sleep 0-12)
+//   - 'binary' : single tap on/off (e.g. custom behaviors)
+//   - 'note'   : freeform text `value`
+const DEFAULT_EXTRA_CATEGORIES = [
+    { id: "sleep", name: "Sleep", type: "scale", scaleMin: 0, scaleMax: 12, color: "#7C9CB1" }
+];
+
 // Sentinel IDs for deleted custom descriptors - preserve historical signal.
 const FALLBACK_LABEL = {
     fallback_positive: "Deleted Positive Emotion",
     fallback_negative: "Deleted Negative Emotion",
     fallback_symptom:  "Custom Symptom (Deleted)",
-    fallback_activity: "Custom Activity (Deleted)"
+    fallback_activity: "Custom Activity (Deleted)",
+    fallback_custom:   "Deleted Custom Category"
 };
 
 // Warm Honey/Cream severity palette. These pairs are: tailwind/bg-class for the
@@ -84,7 +94,11 @@ const CAT_CARD_CLASS = {
     note:     "cat-note"
 };
 
-// ~25 discrete per-entry records spread across ~4 recent days.
+// ~95 discrete per-entry records spread across 8 recent days with realistic
+// time-of-day distribution: morning wake burst (7-9), midday plateau (12-14),
+// evening wind-down (18-21), and a sleep entry near 22-23. Designed to fill
+// the Stream grid (lots of dots spread across hours) and give the Insights
+// charts (energy trend, weekday avg, etc.) enough signal to look real.
 const generateMockData = () => {
     const today = new Date();
     const isoOf = (d, h, m) =>
@@ -101,6 +115,7 @@ const generateMockData = () => {
         { id: id(), date: isoOf(wkAgo, 10, 16), type: 'emotion',  value: 'e_calm' },
         { id: id(), date: isoOf(wkAgo, 10, 30), type: 'activity', value: 'a_meditation' },
         { id: id(), date: isoOf(wkAgo, 21, 0),  type: 'note',     value: 'Quiet Saturday.' },
+        { id: id(), date: isoOf(wkAgo, 23, 30), type: 'sleep',    value: 7.5 },
 
         // 2 days ago
         { id: id(), date: isoOf(twoAgo, 22, 0),  type: 'energy',   value: 5 },
@@ -132,7 +147,49 @@ const generateMockData = () => {
         { id: id(), date: isoOf(today, 14, 31), type: 'emotion',  value: 'e_stressed' },
         { id: id(), date: isoOf(today, 14, 32), type: 'symptom',  value: 's_fatigue', severity: 'severe' },
         { id: id(), date: isoOf(today, 14, 33), type: 'activity', value: 'a_caffeine' },
-        { id: id(), date: isoOf(today, 14, 35), type: 'note',     value: 'Post-lunch crash.' }
+        { id: id(), date: isoOf(today, 14, 35), type: 'note',     value: 'Post-lunch crash.' },
+        // Sleep entries (logged the night before)
+        { id: id(), date: isoOf(yest, 22, 30), type: 'sleep', value: 6.5 },
+        { id: id(), date: isoOf(twoAgo, 23, 0), type: 'sleep', value: 8 },
+
+        // ---- Additional history (extra days) so Stream + Insights have signal ---
+        // Pattern: morning check-in (7-9), midday check-in (12-14),
+        // afternoon log (16-17), evening wind-down (19-21), sleep (22-23).
+        // Mix of energy/emotion/symptom/activity + sleep each day, slightly
+        // variable so Insights weekday aggregates look real.
+        ...(() => {
+            const extra = [];
+            // 3-8 days ago: synthetic entries (deterministic via fixed offset).
+            for (let delta = 3; delta <= 8; delta++) {
+                const day = new Date(today); day.setDate(today.getDate() - delta);
+                const hh = (n) => [Math.floor(n), Math.round((n % 1) * 60)];
+                const push = (h, m, type, value, sev) => extra.push({
+                    id: id(), date: isoOf(day, h, m), type, value, severity: sev
+                });
+                // Morning burst - some days a low-energy slump, some days fine.
+                const lowMorning = (delta % 2 === 0);
+                push(7, 30, 'energy', lowMorning ? 3 : 7);
+                push(7, 35, lowMorning ? 'e_anxious' : 'e_motivated');
+                if (lowMorning) push(7, 40, 'symptom', 's_headache', 'mild');
+                push(8, 15, 'activity', 'a_caffeine');
+                // Lunch + midday
+                push(12, 30, 'energy',      lowMorning ? 5 : 6);
+                push(12, 32, 'emotion',     lowMorning ? 'e_stressed' : 'e_calm');
+                push(13, 0,  'activity',   (delta % 3 === 0) ? 'a_workout' : 'a_caffeine');
+                // Afternoon tail
+                push(16, 45, 'energy', 4 + (delta % 3));
+                if (delta % 4 === 0) push(16, 50, 'symptom', 's_fatigue', 'moderate');
+                if (delta % 5 === 0) push(17, 10, 'note', 'Long day, refilled water 3x.');
+                // Evening
+                push(20, 0,  'energy', 5);
+                push(20, 5,  'emotion', (delta % 2 === 0) ? 'e_irritated' : 'e_calm');
+                push(21, 0,  'activity', (delta % 3 === 1) ? 'a_meditation' : 'a_caffeine');
+                // Sleep (logged the night of)
+                const [sh, sm] = hh(6 + (delta % 3) + ((delta % 2) * 0.5));
+                push(23, 0,  'sleep', sh + sm / 60);
+            }
+            return extra;
+        })()
     ];
 };
 
@@ -183,6 +240,11 @@ window.addEventListener('load', () => {
         if (!ACCENT_NAMES.includes(state.userSettings.preferences.accent)) state.userSettings.preferences.accent = DEFAULT_ACCENT;
         if (!['7d','30d','90d','all'].includes(state.userSettings.preferences.insightsRange)) state.userSettings.preferences.insightsRange = 'all';
         state.meta.migratedToV4 = true;
+    }
+
+    // V6: seed the user's customCategories registry with Sleep on first run.
+    if (!Array.isArray(state.userSettings.customCategories)) {
+        state.userSettings.customCategories = [...DEFAULT_EXTRA_CATEGORIES];
     }
 
     // V2 -> V3 migration. V2 entries are aggregated daily cards; we explode
@@ -275,11 +337,13 @@ function setCalendarMode(mode) {
     activeCalendarMode = mode;
     document.getElementById('calendar-month-container').classList.add('hidden');
     document.getElementById('calendar-timeline-container').classList.add('hidden');
-    // Day mode (V4.1) shares the timeline-style container with Kanban + List.
+    // Stream mode (V5): uses the timeline container with its own feed structure.
     document.getElementById('btn-mode-month').className    = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
     document.getElementById('btn-mode-timeline').className = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
     document.getElementById('btn-mode-day').className      = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
     document.getElementById('btn-mode-kanban').className   = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
+    const btnStream = document.getElementById('btn-mode-stream');
+    if (btnStream) btnStream.className = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition text-[#6E5E5E]";
 
     const activeCls = "flex-1 px-2 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#3D3548] shadow-sm";
     if (mode === 'month') {
@@ -298,24 +362,33 @@ function setCalendarMode(mode) {
         document.getElementById('calendar-timeline-container').classList.remove('hidden');
         document.getElementById('btn-mode-kanban').className = activeCls;
         renderKanbanTimeline();
-    }
-}
+    } else if (mode === 'stream') {
+        document.getElementById('calendar-timeline-container').classList.remove('hidden');
+        if (btnStream) btnStream.className = activeCls;
+        renderStreamTimeline();
+    }}
 
 function refreshCalendarUI() {
     if (activeCalendarMode === 'month')           renderContinuousCalendar();
     else if (activeCalendarMode === 'timeline')   renderSeamlessTimeline();
     else if (activeCalendarMode === 'day')        renderDayTimeline();
     else if (activeCalendarMode === 'kanban')     renderKanbanTimeline();
+    else if (activeCalendarMode === 'stream')     renderStreamTimeline();
 }
 
 // --- 4. LOGGER ENGINE ---------------------------------------------------------
 
-const ENTRY_TYPES   = ['energy', 'emotion', 'symptom', 'activity', 'note'];
-const CHANNEL_LABEL = { energy: 'Energy', emotion: 'Emotion', symptom: 'Symptom', activity: 'Activity', note: 'Note' };
+const ENTRY_TYPES   = ['energy', 'emotion', 'symptom', 'activity', 'note', 'sleep'];
+const CHANNEL_LABEL = { energy: 'Energy', emotion: 'Emotion', symptom: 'Symptom', activity: 'Activity', note: 'Note', sleep: 'Sleep' };
 let currentChannel  = 'energy';
 
 function updateEnergyDisplay(val) {
     document.getElementById('energy-value').innerText = `${val}/10`;
+}
+
+function updateSleepDisplay(val) {
+    const v = parseFloat(val);
+    document.getElementById('sleep-value').innerText = `${Number.isFinite(v) ? v.toFixed(1) : '0.0'}h`;
 }
 
 function renderLogger() {
@@ -329,20 +402,72 @@ function renderChannelPicker() {
     const wrap = document.getElementById('channel-picker');
     if (!wrap) return;
     wrap.innerHTML = '';
-    ENTRY_TYPES.forEach(type => {
+    getAllCategoryDefs().forEach(def => {
         const chip = document.createElement('button');
         chip.type = 'button';
-        chip.dataset.channel = type;
-        chip.innerText = CHANNEL_LABEL[type];
-        chip.className = currentChannel === type
+        chip.dataset.channel = def.key;
+        chip.innerText = def.label;
+        chip.className = currentChannel === def.key
             ? "flex-1 py-2.5 rounded-2xl text-xs font-bold transition bg-[#D89B5C] text-white shadow-soft border border-[#B47A3C] active:scale-95"
             : "flex-1 py-2.5 rounded-2xl text-xs font-bold transition bg-white border border-[#ECE3D0] text-[#6E5E5E] active:scale-90";
-        chip.onclick = () => { currentChannel = type; renderLogger(); };
+        chip.onclick = () => { currentChannel = def.key; renderLogger(); };
         wrap.appendChild(chip);
     });
+    ensureCustomCategoryPanels();
     document.querySelectorAll('[data-channel-panel]').forEach(p => {
         p.classList.toggle('hidden', p.dataset.channelPanel !== currentChannel);
     });
+}
+
+// Inject a panel into view-log for any custom category that doesn't already
+// have a built-in panel. The panel id prefix is "panel-<key>".
+function ensureCustomCategoryPanels() {
+    const view = document.getElementById('view-log');
+    if (!view) return;
+    getAllCategoryDefs().forEach(def => {
+        if (def.builtin) return; // already in index.html
+        const panelId = 'panel-' + def.key;
+        if (document.getElementById(panelId)) return; // already injected
+        view.insertAdjacentHTML('beforeend', buildCustomCategoryPanel(def));
+    });
+}
+function buildCustomCategoryPanel(def) {
+    const panelId = 'panel-' + def.key;
+    const labelColor = def.color;
+    if (def.valueType === 'scale') {
+        const min = def.scaleMin || 0;
+        const max = def.scaleMax || 10;
+        const mid = (min + max) / 2;
+        return `
+            <div id="${panelId}" data-channel-panel="${def.key}" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">${escapeHtml(def.label)}</label>
+                    <span id="${panelId}-value" class="text-xl font-black" style="color:${escapeHtml(labelColor)}">${mid}</span>
+                </div>
+                <input type="range" id="${panelId}-input" min="${min}" max="${max}" value="${mid}" class="w-full h-2.5 bg-[#ECE3D0] rounded-lg appearance-none cursor-pointer" style="accent-color:${escapeHtml(labelColor)}" oninput="document.getElementById('${panelId}-value').innerText=this.value">
+                <div class="flex justify-between text-[10px] font-bold text-[#A0876A] px-1"><span>${min}</span><span>${(min+max)/2}</span><span>${max}</span></div>
+            </div>`;
+    }
+    if (def.valueType === 'binary') {
+        return `
+            <div id="${panelId}" data-channel-panel="${def.key}" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <p class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">${escapeHtml(def.label)} <span class="text-[#ECE3D0] normal-case font-medium">(tap to toggle, save)</span></p>
+                <button id="${panelId}-toggle" data-on="0" class="px-6 py-3 rounded-2xl font-bold text-sm bg-white border-2 border-[#ECE3D0] text-[#6E5E5E]" onclick="
+                    const on = this.dataset.on === '1';
+                    this.dataset.on = on ? '0' : '1';
+                    if (this.dataset.on === '1') { this.style.backgroundColor = '${escapeHtml(def.color)}'; this.style.color = 'white'; this.querySelector('span').innerText = 'ON'; }
+                    else { this.style.backgroundColor = 'white'; this.style.color = ''; this.querySelector('span').innerText = 'OFF'; }
+                "><span class="font-black">OFF</span></button>
+            </div>`;
+    }
+    if (def.valueType === 'note') {
+        return `
+            <div id="${panelId}" data-channel-panel="${def.key}" class="space-y-3 pt-4 border-t border-[#ECE3D0] hidden">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-[#A0876A]">${escapeHtml(def.label)} <span class="text-[#ECE3D0] normal-case font-medium">(free text)</span></label>
+                <textarea id="${panelId}-text" rows="3" placeholder="..." class="w-full bg-white border border-[#ECE3D0] rounded-2xl p-4 text-[#3D3548] font-medium focus:outline-none resize-none placeholder:text-[#A0876A]"></textarea>
+            </div>`;
+    }
+    return '';
 }
 
 function renderEmotionsInLogger() {
@@ -469,6 +594,30 @@ function saveCurrentLog() {
     } else if (currentChannel === 'note') {
         const txt = (document.getElementById('log-notes').value || '').trim();
         if (txt) push({ type: 'note', value: txt });
+    } else if (currentChannel === 'sleep') {
+        const v = parseFloat(document.getElementById('log-sleep').value);
+        if (Number.isFinite(v)) push({ type: 'sleep', value: v });
+    } else {
+        // Custom-category fallback. Look up the def by channel key and dispatch
+        // on its value-type.
+        const def = getAllCategoryDefs().find(d => d.key === currentChannel);
+        if (def && !def.builtin) {
+            const panelId = 'panel-' + def.key;
+            if (def.valueType === 'scale') {
+                const inp = document.getElementById(panelId + '-input');
+                if (inp) {
+                    const v = parseFloat(inp.value);
+                    if (Number.isFinite(v)) push({ type: def.key, value: v });
+                }
+            } else if (def.valueType === 'binary') {
+                const tog = document.getElementById(panelId + '-toggle');
+                if (tog && tog.dataset.on === '1') push({ type: def.key, value: 1 });
+            } else if (def.valueType === 'note') {
+                const txtEl = document.getElementById(panelId + '-text');
+                const txt = (txtEl ? txtEl.value : '').trim();
+                if (txt) push({ type: def.key, value: txt });
+            }
+        }
     }
 
     if (newEntries.length === 0) return;
@@ -768,8 +917,11 @@ function entryNodeColor(log) {
                                   : '#E9C46A';
         case 'activity': return '#7C9CB1';
         case 'note':     return '#A0876A';
+        case 'sleep':    return '#7C9CB1';
     }
-    return '#A0876A';
+    // Custom categories: resolve color from registry.
+    const custom = getCustomCategoryByKey(log.type);
+    return custom ? custom.color : '#A0876A';
 }
 
 // Compact, type-specific row content for both timeline and modal. Each card
@@ -808,8 +960,38 @@ function renderEntryInline(log) {
             return `<div class="${base} ${CAT_CARD_CLASS.note}">
                 <span class="text-[14px] italic text-[#3D3548] leading-snug">${escapeHtml(log.value)}</span>
             </div>`;
+        case 'sleep':
+            return `<div class="${base} cat-sleep">
+                <span class="text-[15px] font-black" style="color:#3D5470">Sleep ${log.value}h</span>
+            </div>`;
     }
-    return '';
+    // Custom-category fallback rendering. Use the registered color.
+    const custom = getCustomCategoryByKey(log.type);
+    if (custom) {
+        const tint = `background-color: color-mix(in srgb, ${custom.color} 18%, white); border-color: color-mix(in srgb, ${custom.color} 30%, white);`;
+        if (custom.type === 'scale') {
+            return `<div class="${base} cat-custom" style="${tint}"><span class="text-[15px] font-black" style="color:${custom.color}">${escapeHtml(custom.name)} ${log.value}</span></div>`;
+        }
+        if (custom.type === 'binary') {
+            return `<div class="${base} cat-custom" style="${tint}"><span class="text-[14px] font-bold" style="color:${custom.color}">${escapeHtml(custom.name)}</span></div>`;
+        }
+        return `<div class="${base} cat-custom" style="${tint}"><span class="text-[14px] italic text-[#3D3548] leading-snug">${escapeHtml(String(log.value))}</span></div>`;
+    }
+    // The custom category was deleted. Preserve historical signal with the labelled sentinel
+    // card so the user can still tell what category was used at the time of logging.
+    return `<div class="${base} cat-custom-deleted">
+        <span class="text-[14px] font-bold text-[#A0876A]">${escapeHtml(FALLBACK_LABEL.fallback_custom)} · <span class="text-[#A0876A]/70">${escapeHtml(String(log.value))}</span></span>
+    </div>`;
+}
+
+// Time-of-day band — drives a subtle gradient on each .stream-row via CSS so
+// the timeline visually evokes daylight. Used in renderStreamTimeline.
+function todBand(h) {
+    if (h >= 5  && h < 8)  return 'tod-dawn';       // warm peach
+    if (h >= 8  && h < 12) return 'tod-morning';    // gold cream
+    if (h >= 12 && h < 17) return 'tod-afternoon';  // neutral cream
+    if (h >= 17 && h < 21) return 'tod-dusk';       // amber wash
+    return 'tod-night';                             // deep navy-warm
 }
 
 function energyNodeColor(energy) {
@@ -917,6 +1099,7 @@ function renderSettings() {
     renderEmotionsInSettings();
     renderSymptomsInSettings();
     renderActivitiesInSettings();
+    renderCustomCategories();
 }
 
 function renderEmotionsInSettings() {
@@ -1005,6 +1188,109 @@ function addNewActivity() {
     renderSettings();
 }
 
+// --- 8b. CUSTOM CATEGORY BUILDER (V6) ---------------------------------------
+// Users define their own categories with name + color + value-type. Stored in
+// state.userSettings.customCategories. Currently rendered in the Settings list
+// for create/delete; future passes can wire them into the channel picker and
+// Stream grid via STREAM_COLS extension.
+function ensureCustomCategories() {
+    if (!Array.isArray(state.userSettings.customCategories)) {
+        state.userSettings.customCategories = [...DEFAULT_EXTRA_CATEGORIES];
+    }
+}
+function addCustomCategory() {
+    ensureCustomCategories();
+    const nameEl = document.getElementById('new-category-name');
+    const colorEl = document.getElementById('new-category-color');
+    const typeEl  = document.getElementById('new-category-type');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const color = colorEl ? colorEl.value : '#D89B5C';
+    const type  = typeEl  ? typeEl.value      : 'binary';
+    if (!name) return;
+    const cat = { id: 'cu_' + Date.now(), name, color, type, valueType: type };
+    if (type === 'scale') {
+        cat.scaleMin = parseFloat(document.getElementById('new-category-min')?.value || 0);
+        cat.scaleMax = parseFloat(document.getElementById('new-category-max')?.value || 10);
+    }
+    state.userSettings.customCategories.push(cat);
+    // Register the new channel with the live ENTRY_TYPES + CHANNEL_LABEL registries so
+    // (a) the Log-view channel picker chip appears, and (b) entry color/Node lookups work.
+    if (!ENTRY_TYPES.includes(cat.id)) {
+        ENTRY_TYPES.push(cat.id);
+        CHANNEL_LABEL[cat.id] = cat.name;
+    }
+    if (!state.userSettings.preferences.streamFilters) state.userSettings.preferences.streamFilters = {};
+    if (state.userSettings.preferences.streamFilters[cat.id] === undefined) {
+        state.userSettings.preferences.streamFilters[cat.id] = true;
+    }
+    saveStateToLocalStorage();
+    if (nameEl) nameEl.value = '';
+    renderSettings();
+    renderLogger();
+    refreshCalendarUI();
+}function deleteCustomCategory(id) {
+    if (!confirm('Delete this custom category? Categories added by you can be removed without affecting existing logs (they will display "Deleted Custom Category").')) return;
+    state.userSettings.customCategories = state.userSettings.customCategories.filter(c => c.id !== id);
+    // De-register from the live channel registries so the Log-view chip + Stream filter + insight lookups don't reference a deleted category.
+    const idx = ENTRY_TYPES.indexOf(id);
+    if (idx !== -1) ENTRY_TYPES.splice(idx, 1);
+    delete CHANNEL_LABEL[id];
+    if (state.userSettings.preferences.streamFilters) {
+        delete state.userSettings.preferences.streamFilters[id];
+    }
+    saveStateToLocalStorage();
+    renderSettings();
+    renderLogger();
+    refreshCalendarUI();
+}
+function renderCustomCategories() {
+    ensureCustomCategories();
+    const list = document.getElementById('custom-categories-list');
+    if (!list) return;
+    list.innerHTML = '';
+    state.userSettings.customCategories.forEach(cat => {
+        const row = document.createElement('div');
+        row.className = 'flex justify-between items-center py-3';
+        row.innerHTML = `
+            <div class="flex items-center gap-3">
+                <span class="w-3.5 h-3.5 rounded-full border border-[#ECE3D0]" style="background:${escapeHtml(cat.color)}"></span>
+                <span class="font-bold text-[#3D3548] text-base">${escapeHtml(cat.name)}</span>
+                <span class="text-[10px] text-[#A0876A] uppercase font-black px-2 py-1 rounded-full tracking-widest bg-[#F5EFE3]">${escapeHtml(cat.type)}</span>
+            </div>
+            <button onclick="deleteCustomCategory('${cat.id}')" class="text-[#A0332A] hover:text-[#C44033] text-xs font-black uppercase tracking-widest bg-[#F8E6E3] px-3 py-1 rounded-full border border-[#E9C8C4]">Del</button>
+        `;
+        list.appendChild(row);
+    });
+}
+
+// Unified channel definition (built-in presets + user-created custom).
+// Drives: Log channel picker, Stream filter chips, generic entry rendering.
+function getAllCategoryDefs() {
+    ensureCustomCategories();
+    const builtins = [
+        { key: 'energy',   label: 'Energy',   color: '#D89B5C', valueType: 'scale',     scaleMin: 1, scaleMax: 10, builtin: true },
+        { key: 'emotion',  label: 'Emotion',  color: '#7E9A6B', valueType: 'valence',   builtin: true },
+        { key: 'symptom',  label: 'Symptom',  color: '#E89C5B', valueType: 'severity',  builtin: true },
+        { key: 'activity', label: 'Activity', color: '#7C9CB1', valueType: 'binary',    builtin: true },
+        { key: 'note',     label: 'Note',     color: '#A0876A', valueType: 'note',      builtin: true },
+        { key: 'sleep',    label: 'Sleep',    color: '#7C9CB1', valueType: 'scale',     scaleMin: 0, scaleMax: 12, builtin: true }
+    ];
+    const customs = state.userSettings.customCategories.map(c => ({
+        key: c.id,
+        label: c.name,
+        color: c.color,
+        valueType: c.type,
+        scaleMin: c.scaleMin,
+        scaleMax: c.scaleMax,
+        builtin: false
+    }));
+    return builtins.concat(customs);
+}
+function getCustomCategoryByKey(key) {
+    ensureCustomCategories();
+    return state.userSettings.customCategories.find(c => c.id === key);
+}
+
 function deleteEmotion(emotionId) {
     if (!confirm("Delete this emotion? Historical logs using this tag will display 'Deleted Positive/Negative Emotion'.")) return;
     const target = state.userSettings.customEmotions.find(e => e.id === emotionId);
@@ -1062,20 +1348,29 @@ function resetAllData() {
 
 function renderInsights() {
     updateRangeChipsUI();
-    // V4.1: clear the chart container ONCE before re-rendering so toggling a
-    // range chip doesn't stack duplicate cards. Each chart appends its own.
+    if (!state.userSettings.preferences.insightsTab) state.userSettings.preferences.insightsTab = 'trends';
+    const tab = state.userSettings.preferences.insightsTab;
+    // V5: clear the chart container ONCE so toggling a range chip or tab
+    // doesn't stack duplicates. Each chart appends its own.
     const charts = document.getElementById('insights-charts');
     if (charts) charts.innerHTML = '';
-    renderEnergyTrendChart();
-    renderTopInfluencers();
-    renderCalendarSeverityMap();
-    renderMultiAxisChart();
-    renderBehavioralCorrelationGrid();
-    renderSymptomCooccurrenceChart();
-    renderDayOfWeekChart();
-    renderInsightSummary();
+    charts.insertAdjacentHTML('beforeend', `
+        <div class="insights-tabs">
+            <button onclick="setInsightsTab('trends')"   class="insights-tab-btn ${tab === 'trends'   ? 'on' : ''}">Trends</button>
+            <button onclick="setInsightsTab('patterns')" class="insights-tab-btn ${tab === 'patterns' ? 'on' : ''}">Patterns</button>
+            <button onclick="setInsightsTab('calendar')" class="insights-tab-btn ${tab === 'calendar' ? 'on' : ''}">Calendar</button>
+        </div>
+    `);
+    const renderers = INSIGHTS_TAB_RENDERERS[tab] || [];
+    renderers.forEach(name => {
+        try { window[name](); } catch (e) { console.error(name, e); }
+    });
+    // renderInsightSummary lives outside #insights-charts and always renders
+    // (it's the always-on summary footer).
+    renderInsightSummaryV2();
 }
 
+// DEPRECATED V6.5 — removed from INSIGHTS_TAB_RENDERERS (curation: line-of-dots overlapped with Stream dots).
 function renderEnergyTrendChart() {
     const charts = document.getElementById('insights-charts');
     if (!charts) return;
@@ -1189,7 +1484,7 @@ function computeTagDelta(daysArr, channelKey, tagId, targetKey) {
     const withAvg    = withN    > 0 ? withSum    / withN    : null;
     const withoutAvg = withoutN > 0 ? withoutSum / withoutN : null;
     const delta      = (withAvg !== null && withoutAvg !== null) ? withAvg - withoutAvg : 0;
-    return { delta, nWith: withN, nWithout };
+    return { delta, nWith: withN, nWithout: withoutN };
 }
 function renderTopInfluencers() {
     const charts = document.getElementById('insights-charts');
@@ -1274,6 +1569,7 @@ function renderTopInfluencers() {
 // --- 9c. CALENDAR SEVERITY MAP (V4.1) ---------------------------------------
 // 6-week grid. Each day is colored by the WORST symptom severity logged that
 // day; non-symptom days are cream; days with no data are transparent.
+// DEPRECATED V6.5 — removed from INSIGHTS_TAB_RENDERERS (curation: the Month calendar view IS the calendar insight).
 function renderCalendarSeverityMap() {
     const charts = document.getElementById('insights-charts');
     if (!charts) return;
@@ -1324,6 +1620,7 @@ function renderCalendarSeverityMap() {
 // count 0..maxN) plotted on the same time axis. Each line uses min-max scaling
 // so disparate scales share the visual canvas. Tap a point to "scrub" the
 // legend pill at the top to that day's raw values.
+// DEPRECATED V6.5 — removed from INSIGHTS_TAB_RENDERERS (curation: stacked axes over-engineered for the use case).
 function renderMultiAxisChart() {
     const charts = document.getElementById('insights-charts');
     if (!charts) return;
@@ -1451,38 +1748,13 @@ function renderDayOfWeekChart() {
                 All-weekday average: <span style="color:var(--ls-accent)">${grandAvg.toFixed(1)}/10</span>
             </p>
         </div>`);
-}
-
-function renderInsightSummary() {
-    const box = document.getElementById('insights-summary');
-    const scoped = applyDateRangeFilter(state.dailyLogs);
-    if (scoped.length === 0) { box.innerHTML = '<p class="text-[var(--ls-ink-mute)] text-sm col-span-2 text-center py-4">No entries in this range.</p>'; return; }
-
-    const energyEnts = scoped.filter(l => l.type === 'energy');
-    const emotionEnts = scoped.filter(l => l.type === 'emotion');
-
-    const energyDayMap = new Map();
-    energyEnts.forEach(l => {
-        const day = l.date.split('T')[0];
-        if (!energyDayMap.has(day)) energyDayMap.set(day, []);
-        energyDayMap.get(day).push(l);
-    });
-
-    const dayAvgs = Array.from(energyDayMap.values()).map(group =>
-        group.reduce((s, l) => s + l.value, 0) / group.length);
-    const avg = dayAvgs.length > 0 ? dayAvgs.reduce((s, e) => s + e, 0) / dayAvgs.length : 0;
-
-    const daysWithData = new Set(scoped.map(l => l.date.split('T')[0])).size;
-    const posCount = emotionEnts.filter(l => classifyEmotion(l.value).valence === 'positive').length;
-    const negCount = emotionEnts.filter(l => classifyEmotion(l.value).valence === 'negative').length;
-
-    box.innerHTML = `
-        ${statCard('Avg Energy',    avg.toFixed(1), '/10', 'accent')}
-        ${statCard('Positive tags', posCount,        '',   'pos')}
-        ${statCard('Negative tags', negCount,        '',   'neg')}
-        ${statCard('Days logged',   daysWithData,    '',   'ink')}
-    `;
-}
+}function renderInsightSummary() {
+        // Deprecated in V6.5 — replaced by renderInsightSummaryV2 (two 44px-headline
+        // cards: Average Energy + Your Best Day). The dispatcher in renderInsights()
+        // now calls V2 instead. Kept as an explicit no-op stub so anyone grepping for
+        // the old symbol still finds this comment explaining the migration.
+        return;
+    }
 
 // --- 9c. BEHAVIORAL CORRELATION GRID (V4) -------------------------------------
 // For each activity tag, compute the average energy on days WHERE the activity
@@ -2061,10 +2333,465 @@ function updateRangeChipsUI() {
             : 'range-chip flex-1 py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider bg-white border border-[var(--ls-bg-deep)] text-[var(--ls-ink-soft)]';
     });
 }
+// --- STREAM VIEW (V5) -------------------------------------------------------
+// Time runs top → bottom (24h scrollable). 5 channel columns (Energy /
+// Emotion / Symptom / Activity / Note) sit side-by-side horizontally. Events
+// are rendered as dots at (hour, column) with opacity encoding value/severity.
+// Toggling a chip in the sticky filter row hides/shows that channel column.
+const STREAM_COLS = [
+    { key: 'energy',   label: 'Energy',   color: '#D89B5C' },
+    { key: 'emotion',  label: 'Emotion',  color: '#7E9A6B' },
+    { key: 'symptom',  label: 'Symptom',  color: '#E89C5B' },
+    { key: 'activity', label: 'Activity', color: '#7C9CB1' },
+    { key: 'note',     label: 'Note',     color: '#A0876A' },
+    { key: 'sleep',    label: 'Sleep',    color: '#7C9CB1' }
+];
+function streamOpacity(log) {
+    if (log.type === 'energy') return 0.2 + ((log.value - 1) / 9) * 0.8;
+    if (log.type === 'symptom') return log.severity === 'severe' ? 1.0 : log.severity === 'moderate' ? 0.7 : 0.4;
+    // Emotion: positive reads as the prominent dot (good day), negative is muted.
+    if (log.type === 'emotion') return classifyEmotion(log.value).valence === 'positive' ? 1.0 : 0.55;
+    if (log.type === 'sleep') return 0.2 + (log.value / 12) * 0.8;
+    // Custom categories: scale uses its min/max mapping, binary full opacity.
+    const custom = getCustomCategoryByKey(log.type);
+    if (custom) {
+        if (custom.type === 'scale') {
+            const min = custom.scaleMin || 0;
+            const max = custom.scaleMax || 10;
+            return 0.2 + ((log.value - min) / (max - min || 1)) * 0.8;
+        }
+        if (custom.type === 'binary') return 1.0;
+    }
+    return 0.5; // activity / note / note-type custom baseline
+}
+
+// Combined stream columns: built-in STREAM_COLS + user-created custom categories.
+function getStreamChannels() {
+    ensureCustomCategories();
+    const customs = state.userSettings.customCategories.filter(c => !STREAM_COLS.some(s => s.key === c.id)).map(c => ({
+        key: c.id, label: c.name, color: c.color
+    }));
+    return STREAM_COLS.concat(customs);
+}
+function ensureStreamState() {
+    const p = state.userSettings.preferences = state.userSettings.preferences || {};
+    if (!p.streamFilters) p.streamFilters = {};
+    // Seed filters for each known channel (built-in presets + custom cats)
+    // so newly-added custom categories appear in the Stream chips by default.
+    getStreamChannels().forEach(c => {
+        if (!(c.key in p.streamFilters)) p.streamFilters[c.key] = true;
+    });
+    if (!p.streamDate) {
+        const t = new Date();
+        p.streamDate = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+    }
+}
+function stepStreamDate(delta) {
+    ensureStreamState();
+    const [y, m, d] = state.userSettings.preferences.streamDate.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + (delta || 0));
+    if (delta === 0) { // jump to today
+        const t = new Date();
+        state.userSettings.preferences.streamDate = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+    } else {
+        state.userSettings.preferences.streamDate = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    }
+    saveStateToLocalStorage();
+    renderStreamTimeline();
+}
+function jumpToTodayStream() { stepStreamDate(0); }
+function toggleStreamFilter(key) {
+    ensureStreamState();
+    state.userSettings.preferences.streamFilters[key] = !state.userSettings.preferences.streamFilters[key];
+    saveStateToLocalStorage();
+    renderStreamTimeline();
+}
+function todayKeyLocal() {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+}
+function renderStreamTimeline() {
+    ensureStreamState();
+    const feed = document.getElementById('continuous-timeline-feed');
+    if (!feed) return;
+    feed.innerHTML = '';
+    feed.className = "relative z-10 stream-host";
+    const dateKey = state.userSettings.preferences.streamDate;
+    const dayLogs = state.dailyLogs.filter(l => l.date.startsWith(dateKey));
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const today = todayKeyLocal();
+    const isToday = dateKey === today;
+    const daysDiff = Math.round((new Date(today + 'T12:00') - new Date(dateKey + 'T12:00')) / 86400000);
+    const sub = isToday ? 'TODAY' : daysDiff === 1 ? 'YESTERDAY' : daysDiff > 1 ? daysDiff + ' DAYS AGO' : daysDiff === -1 ? 'TOMORROW' : Math.abs(daysDiff) + 'D FUTURE';
+    const dateLabel = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const visibleCols = getStreamChannels().filter(c => state.userSettings.preferences.streamFilters[c.key]);
+    // Pre-group dayLogs by (type|hour) so the inner per-cell render is O(1)
+    // lookup rather than O(N) filter. Keeps 1000+ entry datasets snappy.
+    const cellMap = new Map();
+    dayLogs.forEach(l => {
+        const t = l.date.split('T')[1];
+        if (!t) return;
+        const hour = parseInt(t.split(':')[0], 10);
+        const key = l.type + '|' + hour;
+        if (!cellMap.has(key)) cellMap.set(key, []);
+        cellMap.get(key).push(l);
+    });
+    feed.innerHTML = `
+        <div class="stream-stepper">
+            <button onclick="stepStreamDate(-1)" aria-label="Previous day" class="stream-arrow">‹</button>
+            <div class="flex flex-col items-center min-w-0 px-2">
+                <span class="stream-date-label">${dateLabel}</span>
+                <span class="stream-date-sub">${sub}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                ${isToday ? '<span class="text-[11px] font-black text-[#A0876A] uppercase tracking-widest">TODAY</span>' : '<button onclick="jumpToTodayStream()" class="stream-today-btn">Today</button>'}
+                <button onclick="stepStreamDate(1)" aria-label="Next day" class="stream-arrow">›</button>
+            </div>
+        </div>
+        ${visibleCols.length === 0
+            ? '<div class="stream-all-off">Tap a chip above to show entries</div>'
+            : `<div class="stream-chips">
+                ${getStreamChannels().map(c => {
+                    const on = state.userSettings.preferences.streamFilters[c.key];
+                    return `<button onclick="toggleStreamFilter('${c.key}')" class="stream-chip ${on ? 'on' : 'off'}" style="${on ? `--chip-color:${c.color};` : ''}"><span class="chip-dot" style="background:${c.color}"></span>${c.label}</button>`;
+                }).join('')}
+              </div>
+              <div class="stream-col-header">
+                  <div class="stream-time-head">Time</div>
+                  ${visibleCols.map(c => `<div class="stream-col-head-cell" style="--chip-color:${c.color};"><span class="chip-dot" style="background:${c.color}"></span>${c.label}</div>`).join('')}
+              </div>
+              <div class="stream-grid" style="--col-count:${visibleCols.length}">
+                  ${Array.from({ length: 24 }, (_, h) => {
+                      const hourLabel = h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM';
+                      const isMajor = h % 3 === 0;
+                      const cells = visibleCols.map(c => {
+                          const cellLogs = cellMap.get(c.key + '|' + h) || [];
+                          const dots = cellLogs.slice(0, 5).map((log, idx) => {
+                              const o = streamOpacity(log);
+                              const dx = idx * 4, dy = idx * 3;
+                              return `<span class="stream-dot" style="left:calc(50% + ${dx}px);top:calc(50% + ${dy}px);background:${c.color};opacity:${o};"></span>`;
+                          }).join('');
+                          const more = cellLogs.length > 5 ? `<span class="stream-more">+${cellLogs.length - 5}</span>` : '';
+                          const hasAny = cellLogs.length > 0;
+                          return `<div class="stream-cell ${hasAny ? 'has-data' : ''}" data-cell="${c.key}-${h}" onclick="${hasAny ? `openDayModal('${dateKey}', state.dailyLogs.filter(l => l.date.startsWith('${dateKey}')))` : ''}">${dots}${more}</div>`;
+                      }).join('');                       return `<div class="stream-row ${isMajor ? 'major' : ''} ${todBand(h)}">
+                          <div class="stream-time">${hourLabel}</div>
+                          ${cells}
+                      </div>`;
+                  }).join('')}
+              </div>
+              <div class="stream-summary">
+                  ${getStreamChannels().map(c => {
+                      const n = dayLogs.filter(l => l.type === c.key).length;
+                      const on = state.userSettings.preferences.streamFilters[c.key];
+                      return `<span class="stream-summary-cell ${on ? '' : 'off'}" style="--chip-color:${c.color};${on ? '' : 'opacity:0.35;'}"><span class="chip-dot" style="background:${c.color}"></span><strong>${n}</strong> ${c.label}</span>`;
+                  }).join('')}
+              </div>`}
+    `;
+}
+
+// --- INSIGHTS TABS (V5) ------------------------------------------------------
+// Three lenses: Trends (line + parallel + day-of-week) /
+// Patterns (top influencers + correlation + coocc) / Calendar (heatmap + summary).
+// V6.5 curation: drop the energy-trend line + multi-axis (overlap with Stream dots),
+// drop Calendar-tab heat-map (overlap with the Month calendar view), elevate Day-of-Week
+// + a new Routine-Impact card. Patterns tab gains a Time-to-Effect card.
+// insightSummary still lives outside #insights-charts so it stays visible across all tabs.
+const INSIGHTS_TAB_RENDERERS = {
+    trends:    ['renderDayOfWeekChart', 'renderRoutineImpact'],
+    patterns:  ['renderTopInfluencers', 'renderBehavioralCorrelationGrid', 'renderTimeToEffect', 'renderSymptomCooccurrenceChart']
+};
+function setInsightsTab(tab) {
+    if (!INSIGHTS_TAB_RENDERERS[tab]) return;
+    if (!state.userSettings.preferences) state.userSettings.preferences = {};
+    state.userSettings.preferences.insightsTab = tab;
+    saveStateToLocalStorage();
+    renderInsights();
+}
+
 function applyDateRangeFilter(entries) {
     if (insightsRange === 'all') return entries;
     const days = parseInt(insightsRange, 10);
     if (!Number.isFinite(days)) return entries;
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
     return entries.filter(l => new Date(l.date) >= cutoff);
+}
+
+// =============================================================================
+// V6.5 — INSIGHT CARDS (CURATION) + INLINE CATEGORY BUILDER
+// Tail-end of file so we don't disturb earlier numbered sections. All new
+// exports are referenced from the curation map (INSIGHTS_TAB_RENDERERS) and the
+// inline-builder sheet markup in index.html.
+// =============================================================================
+
+// Big-number summary card. Replaces the prior 4-card grid with TWO huge
+// headlines for instant readability at phone scale. Auto-detects the best
+// day-of-week from energy logs (requires >=7 days of data to surface a name).
+function renderInsightSummaryV2() {
+    const box = document.getElementById('insights-summary');
+    if (!box) return;
+    const entries = applyDateRangeFilter(state.dailyLogs);
+    if (entries.length === 0) {
+        box.innerHTML = '<p class="col-span-2 text-center text-[#A0876A] py-6 text-sm font-medium">No entries in this range yet.</p>';
+        return;
+    }
+    const energyEnts = entries.filter(l => l.type === 'energy');
+    let avgEnergy = null;
+    if (energyEnts.length > 0) {
+        const perDay = {};
+        energyEnts.forEach(l => { const d = l.date.split('T')[0]; perDay[d] = perDay[d] || []; perDay[d].push(l.value); });
+        const dailyAvgs = Object.values(perDay).map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
+        avgEnergy = dailyAvgs.reduce((a, b) => a + b, 0) / dailyAvgs.length;
+    }
+    let bestDay = null;
+    const energyDaySet = new Set(energyEnts.map(l => l.date.split('T')[0]));
+    if (energyDaySet.size >= 7) {
+        const perDow = { 0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[] };
+        energyEnts.forEach(l => { perDow[new Date(l.date).getDay()].push(l.value); });
+        let bestVal = -1, bestIdx = -1;
+        Object.entries(perDow).forEach(([k, arr]) => {
+            if (arr.length === 0) return;
+            const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+            if (m > bestVal) { bestVal = m; bestIdx = parseInt(k, 10); }
+        });
+        if (bestIdx !== -1) bestDay = { name: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][bestIdx], val: bestVal };
+    }
+    const energyColor = avgEnergy === null ? '#A0876A' :
+        avgEnergy >= 7 ? '#B47A3C' : avgEnergy >= 4 ? '#D89B5C' : '#A0332A';
+    box.innerHTML = `
+        <div class="ios-card p-5 flex flex-col gap-1">
+            <span class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Average Energy</span>
+            <span class="stat-headline" style="color:${energyColor}">${avgEnergy === null ? '—' : avgEnergy.toFixed(1)}</span>
+            <span class="text-[11px] font-bold text-[#A0876A]">on a 1-10 scale</span>
+        </div>
+        <div class="ios-card p-5 flex flex-col gap-1">
+            <span class="text-[10px] font-black uppercase tracking-widest text-[#A0876A]">Your Best Day</span>
+            <span class="stat-headline" style="color:#7E9A6B">${bestDay ? bestDay.name : '—'}</span>
+            <span class="text-[11px] font-bold text-[#A0876A]">${bestDay ? 'avg ' + bestDay.val.toFixed(1) + '/10 energy' : 'need 7+ days of energy entries'}</span>
+        </div>`;
+}
+
+// Routine Impact — for each activity, average energy + positive-emotion ratio
+// on days WITH vs WITHOUT. EARN ITS KEEP: surfaces hidden behavioral patterns
+// the user can't see by reading rows ("You feel +1.8 energy on days you log Workout").
+function renderRoutineImpact() {
+    const cont = document.getElementById('insights-charts');
+    if (!cont) return;
+    const entries = applyDateRangeFilter(state.dailyLogs);
+    if (entries.length === 0) return;
+    const activities = state.userSettings.customActivities || [];
+    if (activities.length === 0) return;
+
+    const perDay = {};
+    entries.forEach(l => {
+        const d = l.date.split('T')[0];
+        perDay[d] = perDay[d] || { energy: [], pos: 0, neg: 0, acts: new Set() };
+        if (l.type === 'energy') perDay[d].energy.push(l.value);
+        if (l.type === 'emotion') {
+            const v = classifyEmotion(l.value).valence;
+            if (v === 'positive') perDay[d].pos++;
+            if (v === 'negative') perDay[d].neg++;
+        }
+        if (l.type === 'activity') perDay[d].acts.add(l.value);
+    });
+    const dayArr = Object.values(perDay);
+
+    const rows = activities.map(a => {
+        const withDays = dayArr.filter(d => d.acts.has(a.id));
+        const withoutDays = dayArr.filter(d => !d.acts.has(a.id));
+        if (withDays.length < 2 || withoutDays.length < 2) return null;
+        const avg = (days) => {
+            const e = days.map(d => d.energy.length ? d.energy.reduce((x, y) => x + y, 0) / d.energy.length : 0).filter(v => v > 0);
+            return e.length ? e.reduce((x, y) => x + y, 0) / e.length : null;
+        };
+        const avgEwith = avg(withDays);
+        const avgEwithout = avg(withoutDays);
+        const posRatioWith = withDays.reduce((s, d) => s + d.pos, 0) / withDays.length;
+        const posRatioWithout = withoutDays.reduce((s, d) => s + d.pos, 0) / withoutDays.length;
+        const eDelta = (avgEwith !== null && avgEwithout !== null) ? avgEwith - avgEwithout : null;
+        const pDelta = posRatioWith - posRatioWithout;
+        return { a, withDays: withDays.length, withoutDays: withoutDays.length, eDelta, pDelta };
+    }).filter(r => r !== null && (r.eDelta !== null || Math.abs(r.pDelta) > 0.05));
+
+    if (rows.length === 0) return;
+    rows.sort((x, y) => (Math.abs(y.eDelta || 0) + Math.abs(y.pDelta)) - (Math.abs(x.eDelta || 0) + Math.abs(x.pDelta)));
+
+    const html = rows.map(r => {
+        const eColor = r.eDelta === null ? '#A0876A' : r.eDelta > 0.15 ? '#7E9A6B' : r.eDelta < -0.15 ? '#C44033' : '#A0876A';
+        const eSign = r.eDelta === null ? '—' : (r.eDelta > 0 ? '+' : '') + r.eDelta.toFixed(1);
+        const pColor = r.pDelta > 0.05 ? '#7E9A6B' : r.pDelta < -0.05 ? '#C44033' : '#A0876A';
+        const pSign = (r.pDelta > 0 ? '+' : '') + r.pDelta.toFixed(1);
+        return `<div class="ios-card p-4">
+            <div class="flex justify-between items-baseline mb-2">
+                <span class="text-[15px] font-black text-[#3D3548]">${escapeHtml(r.a.name)}</span>
+                <span class="text-[10px] font-bold text-[#A0876A]">${r.withDays}d&nbsp;with&nbsp;•&nbsp;${r.withoutDays}d&nbsp;without</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <div class="text-[10px] uppercase tracking-widest text-[#A0876A] font-black">Energy</div>
+                    <div class="text-[22px] font-black leading-none mt-1" style="color:${eColor}">${eSign}<span class="text-[10px] text-[#A0876A] font-bold">&nbsp;/10</span></div>
+                </div>                        <div>
+                    <div class="text-[10px] uppercase tracking-widest text-[#A0876A] font-black">Positivity</div>
+                    <div class="text-[22px] font-black leading-none mt-1" style="color:${pColor}">${pSign}<span class="text-[10px] text-[#A0876A] font-bold">&nbsp;/day</span></div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ios-card p-5';
+    wrap.innerHTML = `<h3 class="text-[16px] font-black text-[#3D3548] mb-1">Routine Impact</h3>
+        <p class="text-[11px] text-[#A0876A] font-medium mb-3">Days WITH this behavior vs days WITHOUT — a hidden pattern buried in your entries.</p>
+        <div class="space-y-3">${html}</div>`;
+    cont.appendChild(wrap);
+}
+
+// Time-to-Effect — for each (activity, symptom) pair: count how often the
+// symptom occurs within 120 minutes of the activity. EARN ITS KEEP: temporal
+// causal signal the user couldn't see by reading 30 rows ("70% of your severe
+// headaches fell within 2 hours of Caffeine").
+function renderTimeToEffect() {
+    const cont = document.getElementById('insights-charts');
+    if (!cont) return;
+    const entries = applyDateRangeFilter(state.dailyLogs);
+    if (entries.length === 0) return;
+    const activities = state.userSettings.customActivities || [];
+    const symptoms = state.userSettings.customSymptoms || [];
+    if (activities.length === 0 || symptoms.length === 0) return;
+
+    const WINDOW_MIN = 120;
+    const rows = [];
+    for (const act of activities) {
+        const actLogs = entries.filter(l => l.type === 'activity' && l.value === act.id);            if (actLogs.length < 1) continue;
+        for (const sym of symptoms) {
+            const symLogs = entries.filter(l => l.type === 'symptom' && l.value === sym.id);
+            if (symLogs.length === 0) continue;
+            let clustered = 0;
+            actLogs.forEach(a => {
+                const aTs = new Date(a.date).getTime();
+                symLogs.forEach(s => {
+                    const diff = (new Date(s.date).getTime() - aTs) / 60000;
+                    if (diff > 0 && diff <= WINDOW_MIN) clustered++;
+                });
+            });
+            const ratio = clustered / Math.max(1, actLogs.length);
+            if (clustered >= 2 && ratio >= 0.20) rows.push({ act, sym, clustered, total: actLogs.length, ratio });
+        }
+    }
+    if (rows.length === 0) return;
+    rows.sort((a, b) => b.ratio - a.ratio);
+
+    const html = rows.slice(0, 5).map(r => {
+        const pct = Math.round(r.ratio * 100);
+        return `<div class="ios-card p-4">
+            <span class="text-[10px] uppercase tracking-widest text-[#A0876A] font-black">${pct}% of the time</span>
+            <div class="text-[15px] font-black text-[#3D3548] mt-1">${escapeHtml(r.act.name)}</div>
+            <div class="text-[13px] text-[#6E5E5E] mt-1">leads to ${escapeHtml(r.sym.name)} within ${WINDOW_MIN} min</div>
+            <div class="text-[11px] text-[#A0876A] mt-1 font-medium">${r.clustered} of ${r.total} ${escapeHtml(r.act.name)} sessions were followed by ${escapeHtml(r.sym.name)}.</div>
+        </div>`;
+    }).join('');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ios-card p-5';
+    wrap.innerHTML = `<h3 class="text-[16px] font-black text-[#3D3548] mb-1">Time-to-Effect</h3>
+        <p class="text-[11px] text-[#A0876A] font-medium mb-3">Symptoms that cluster in the ${WINDOW_MIN} minutes after an activity — a temporal correlation.</p>
+        <div class="space-y-3">${html}</div>`;
+    cont.appendChild(wrap);
+}
+
+// ===== Inline category builder (Log tab) ======
+// A "+ New" sub-pill beneath #channel-picker expands an inline form so users
+// can create a custom category without navigating to Settings.
+const BUILDER_SWATCHES = [
+    { hex: '#D89B5C', name: 'Terracotta' },
+    { hex: '#7E9A6B', name: 'Sage' },
+    { hex: '#7C9CB1', name: 'Dusty Blue' },
+    { hex: '#A0876A', name: 'Mocha' },
+    { hex: '#C44033', name: 'Brick' },
+    { hex: '#B47A3C', name: 'Deep Amber' }
+];
+let currentBuilderColor = BUILDER_SWATCHES[0].hex;
+function openInlineCategoryBuilder() {
+    const sheet = document.getElementById('inline-builder');
+    if (!sheet) return;
+    sheet.classList.remove('hidden');
+    renderBuilderSwatches();
+    pickBuilderType(document.getElementById('inline-builder-type').value || 'scale');
+    document.getElementById('inline-builder-name').focus();
+    updateBuilderTypeFields();
+}
+function closeInlineCategoryBuilder() {
+    const sheet = document.getElementById('inline-builder');
+    if (!sheet) return;
+    sheet.classList.add('hidden');
+    document.getElementById('inline-builder-name').value = '';
+    document.getElementById('inline-builder-min').value = '0';
+    document.getElementById('inline-builder-max').value = '10';
+    document.getElementById('inline-builder-type').value = 'binary';
+    currentBuilderColor = BUILDER_SWATCHES[0].hex;
+}
+function renderBuilderSwatches() {
+    const wrap = document.getElementById('inline-builder-swatches');
+    if (!wrap) return;
+    wrap.innerHTML = BUILDER_SWATCHES.map(s =>
+        `<button type="button" data-color="${s.hex}" onclick="pickBuilderColor('${s.hex}')"
+            class="builder-swatch ${s.hex === currentBuilderColor ? 'on' : ''}"
+            style="background:${s.hex}" aria-label="${s.name}"></button>`
+    ).join('');
+}
+function pickBuilderColor(hex) {
+    currentBuilderColor = hex;
+    renderBuilderSwatches();
+}
+function updateBuilderTypeFields() {
+    const t = document.getElementById('inline-builder-type');
+    const scaleRow = document.getElementById('inline-builder-scale');
+    if (!t || !scaleRow) return;
+    scaleRow.classList.toggle('hidden', t.value !== 'scale');
+}
+function pickBuilderType(type) {
+    const inp = document.getElementById('inline-builder-type');
+    if (inp) inp.value = type;
+    document.querySelectorAll('.builder-type-btn').forEach(b => {
+        b.classList.toggle('on', b.id === 'builder-type-' + type);
+    });
+    updateBuilderTypeFields();
+}
+function saveInlineCategory() {
+    const nameEl = document.getElementById('inline-builder-name');
+    const typeEl = document.getElementById('inline-builder-type');
+    const name = (nameEl.value || '').trim();
+    if (!name) { nameEl.focus(); return; }
+    const allCustom = [
+        ...(state.userSettings.customEmotions   || []),
+        ...(state.userSettings.customSymptoms   || []),
+        ...(state.userSettings.customActivities || []),
+        ...(state.userSettings.customCategories || [])
+    ];
+    if (allCustom.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        nameEl.style.borderColor = '#C44033';
+        setTimeout(() => { nameEl.style.borderColor = '#ECE3D0'; }, 1200);
+        return;
+    }
+    const cat = { id: 'cu_' + Date.now(), name, color: currentBuilderColor, type: typeEl.value, valueType: typeEl.value };
+    if (typeEl.value === 'scale') {
+        cat.scaleMin = parseFloat(document.getElementById('inline-builder-min').value || 0);
+        cat.scaleMax = parseFloat(document.getElementById('inline-builder-max').value || 10);
+        if (!(cat.scaleMax > cat.scaleMin)) return;
+    }
+    state.userSettings.customCategories.push(cat);
+    if (!ENTRY_TYPES.includes(cat.id)) {
+        ENTRY_TYPES.push(cat.id);
+        CHANNEL_LABEL[cat.id] = cat.name;
+    }
+    if (!state.userSettings.preferences.streamFilters) state.userSettings.preferences.streamFilters = {};
+    if (state.userSettings.preferences.streamFilters[cat.id] === undefined) state.userSettings.preferences.streamFilters[cat.id] = true;
+    saveStateToLocalStorage();
+    closeInlineCategoryBuilder();
+    currentChannel = cat.id;
+    renderLogger();
+    renderSettings();
+    refreshCalendarUI();
 }
