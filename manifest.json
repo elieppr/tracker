@@ -1,6 +1,6 @@
 {
-  "name": "My Free iPhone App",
-  "short_name": "FreeApp",
+  "name": "LifeSync Tracker",
+  "short_name": "LifeSync",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#f0f2f5",

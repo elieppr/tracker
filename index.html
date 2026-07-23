@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>LifeSync Tracker</title>
-    
+
     <link rel="stylesheet" href="styles.css">
-    
+
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <script src="app.js" defer></script>
 </head>
 <body class="text-slate-800 flex flex-col h-screen overflow-hidden">
@@ -19,7 +19,7 @@
     <header class="bg-white/90 backdrop-blur-md px-6 py-4 pt-10 shrink-0 z-20 border-b border-slate-100">
         <div class="flex justify-between items-center">
             <h1 class="text-2xl font-bold tracking-tight text-slate-900" id="app-title">Log Your Day</h1>
-            
+
             <div id="mode-switcher" class="hidden bg-slate-100 p-1 rounded-xl flex gap-1">
                 <button onclick="setCalendarMode('month')" id="btn-mode-month" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-slate-800 shadow-sm">Month</button>
                 <button onclick="setCalendarMode('timeline')" id="btn-mode-timeline" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-500">Timeline</button>
@@ -28,11 +28,13 @@
     </header>
 
     <main class="flex-grow overflow-y-auto no-scrollbar relative" id="main-content">
-        
+
+        <!-- ============================= LOG VIEW ============================= -->
         <section id="view-log" class="p-6 space-y-6">
+
             <div class="space-y-2">
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Date & Time</label>
-                <input type="datetime-local" id="log-date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-slate-800 font-semibold focus:outline-none">
+                <input type="datetime-local" id="log-date" class="w-full bg-white border border-slate-200 rounded-xl p-4 text-slate-800 font-semibold focus:outline-none">
             </div>
 
             <div class="space-y-3 pt-2">
@@ -48,9 +50,10 @@
                 </div>
             </div>
 
+            <!-- Emotions -->
             <div class="space-y-4 pt-4 border-t border-slate-100">
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Emotions</label>
-                
+
                 <div class="space-y-2">
                     <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500">Positive</span>
                     <div id="positive-emotions-list" class="flex flex-wrap gap-2"></div>
@@ -62,13 +65,32 @@
                 </div>
             </div>
 
-            <button onclick="saveCurrentLog()" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 transition duration-150 mt-4">
+            <!-- Symptoms (with severity) -->
+            <div class="space-y-3 pt-4 border-t border-slate-100">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Symptoms <span class="text-slate-300 normal-case font-medium">(tap a severity to log it)</span></label>
+                <div id="symptoms-list" class="space-y-2"></div>
+            </div>
+
+            <!-- Activities / Behaviors -->
+            <div class="space-y-3 pt-4 border-t border-slate-100">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Activities / Behaviors</label>
+                <div id="activities-list" class="flex flex-wrap gap-2"></div>
+            </div>
+
+            <!-- Notes -->
+            <div class="space-y-3 pt-4 border-t border-slate-100">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Notes <span class="text-slate-300 normal-case font-medium">(optional)</span></label>
+                <textarea id="log-notes" rows="3" placeholder="Anything noteworthy about today…" class="w-full bg-white border border-slate-200 rounded-xl p-4 text-slate-800 font-medium focus:outline-none resize-none placeholder:text-slate-400"></textarea>
+            </div>
+
+            <button onclick="saveCurrentLog()" id="log-save-btn" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 transition duration-150 mt-4">
                 Save Entry
             </button>
         </section>
 
+        <!-- ============================= CALENDAR VIEW ============================= -->
         <section id="view-calendar" class="hidden h-full">
-            
+
             <div id="calendar-month-container" class="h-full overflow-y-auto no-scrollbar pb-24">
                 <div class="sticky top-0 bg-white/95 backdrop-blur-sm z-10 grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-slate-400 py-3 border-b border-slate-100">
                     <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
@@ -78,33 +100,71 @@
 
             <div id="calendar-timeline-container" class="hidden h-full overflow-y-auto no-scrollbar px-6 py-6 pb-32 relative">
                 <div class="absolute left-[39px] top-0 bottom-0 w-[2px] bg-slate-100 z-0"></div>
-                
+
                 <div id="continuous-timeline-feed" class="space-y-8 relative z-10"></div>
             </div>
 
         </section>
 
-        <section id="view-insights" class="hidden p-6 text-center py-20">
-            <p class="text-slate-400 font-medium">Analytics and graphs are coming in Step 3!</p>
+        <!-- ============================= INSIGHTS VIEW ============================= -->
+        <section id="view-insights" class="hidden p-6 space-y-6 pb-32">
+
+            <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Energy Over Time</p>
+            <div id="insights-chart-card" class="bg-white ios-card border border-slate-100 shadow-sm p-5">
+                <div id="insights-chart-container"></div>
+            </div>
+
+            <div id="insights-summary" class="grid grid-cols-2 gap-3"></div>
         </section>
 
-        <section id="view-settings" class="hidden p-6 space-y-6">
+        <!-- ============================= SETTINGS VIEW ============================= -->
+        <section id="view-settings" class="hidden p-6 space-y-8 pb-32">
+
+            <!-- Emotions -->
             <div class="space-y-4">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Emotions</h3>
                 <div class="flex gap-2">
-                    <input type="text" id="new-emotion-name" placeholder="Emotion Name" class="flex-grow bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
-                    <select id="new-emotion-valence" class="bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none font-bold text-sm">
+                    <input type="text" id="new-emotion-name" placeholder="Emotion Name" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
+                    <select id="new-emotion-valence" class="bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-bold text-sm">
                         <option value="positive">Pos (+)</option>
                         <option value="negative">Neg (-)</option>
                     </select>
-                    <button onclick="addNewEmotion()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md">+</button>
+                    <button onclick="addNewEmotion()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
                 </div>
                 <div id="settings-emotions-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+            </div>
+
+            <!-- Symptoms -->
+            <div class="space-y-4">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Symptoms</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="new-symptom-name" placeholder="Symptom Name (e.g. Acid Reflux)" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
+                    <button onclick="addNewSymptom()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
+                </div>
+                <div id="settings-symptoms-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+            </div>
+
+            <!-- Activities -->
+            <div class="space-y-4">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Manage Activities / Behaviors</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="new-activity-name" placeholder="Activity (e.g. Caffeine, Workout)" class="flex-grow bg-white border border-slate-200 rounded-xl p-3 focus:outline-none font-semibold">
+                    <button onclick="addNewActivity()" class="bg-blue-600 text-white px-5 rounded-xl font-black shadow-md" style="background-color:#007aff">+</button>
+                </div>
+                <div id="settings-activities-list" class="divide-y divide-slate-100 border-t border-slate-100 mt-4 pt-2"></div>
+            </div>
+
+            <div class="space-y-4 pt-4 border-t border-slate-100">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Data</h3>
+                <button onclick="resetAllData()" class="w-full bg-rose-50 border border-rose-100 text-rose-600 active:bg-rose-100 font-bold py-3 rounded-2xl text-sm">
+                    Reset all data
+                </button>
             </div>
         </section>
 
     </main>
 
+    <!-- ============================= DAY MODAL ============================= -->
     <div id="day-modal" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-end justify-center z-50 transition-opacity duration-300">
         <div class="bg-white w-full max-w-lg rounded-t-[32px] p-6 pb-12 space-y-6 max-h-[85vh] overflow-y-auto translate-y-full transition-transform duration-300 shadow-2xl" id="day-modal-sheet">
             <div class="flex justify-between items-center sticky top-0 bg-white pb-2 z-10">
@@ -115,8 +175,9 @@
         </div>
     </div>
 
+    <!-- ============================= BOTTOM NAV ============================= -->
     <nav class="bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around py-3 px-2 shrink-0 z-30 absolute bottom-0 w-full pb-[calc(env(safe-area-inset-bottom)+12px)]">
-        <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1 text-blue-600" id="btn-log">
+        <button onclick="switchTab('log')" class="tab-btn flex flex-col items-center gap-1 text-blue-600" id="btn-log" style="color:#007aff">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
             <span class="text-[10px] font-bold">Log</span>
         </button>

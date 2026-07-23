@@ -1,18 +1,23 @@
-/* Prevents bouncing/scrolling issues on iOS */
+/* iOS-native feel: removes tap flash, uses system font, respects safe areas */
 body {
     -webkit-tap-highlight-color: transparent;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     padding-bottom: env(safe-area-inset-bottom);
     padding-top: env(safe-area-inset-top);
-    background-color: #ffffff;
+    background-color: #f0f2f5;   /* PRD §3.1 — neutral light background */
+    color: #1c1c1e;
 }
 
-/* Custom scrollbar behavior for native feel */
-.no-scrollbar::-webkit-scrollbar { 
-    display: none; 
-}
+/* Hide scrollbars on the in-app scroll regions for a native feel */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-.no-scrollbar { 
-    -ms-overflow-style: none; 
-    scrollbar-width: none; 
+/* PRD §3.1 — card borders use iOS standard 20px rounding */
+.ios-card { border-radius: 20px; }
+
+/* PRD §3.1 — accent palette shorthand */
+:root {
+    --ls-blue: #007aff;
+    --ls-green: #34c759;
+    --ls-red: #ff3b30;
 }
