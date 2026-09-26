@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Tracker</title>
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0e0e12" media="(prefers-color-scheme: dark)">
+    <!-- Add to Home Screen: opens full-screen like an app -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Tracker">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="error-container" class="toast-container"></div>
+    <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+
+    <header class="topbar">
+        <div class="topbar-inner">
+            <div class="brand">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                        <rect x="4" y="12" width="4" height="8" rx="2" />
+                        <rect x="10" y="8" width="4" height="12" rx="2" />
+                        <rect x="16" y="4" width="4" height="16" rx="2" />
+                    </svg>
+                </span>
+                <span>Tracker</span>
+            </div>
+            <nav class="tabs connected-only" aria-label="Sections">
+                <button class="tab-btn active" onclick="switchTab('overview', this)">Overview</button>
+                <button class="tab-btn" onclick="switchTab('timeline', this)">Timeline</button>
+                <button class="tab-btn" onclick="switchTab('insights', this)">Insights</button>
+                <button class="tab-btn" onclick="switchTab('manage', this)">Manage</button>
+            </nav>
+            <button class="btn btn-ghost btn-small refresh-btn connected-only" onclick="handleRefresh(this)" title="Reload data from your Google Sheet">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>
+                <span class="refresh-label">Refresh</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="container">
+        <div id="demo-banner" class="demo-banner" hidden>
+            <span><strong>Demo mode.</strong> This is sample data and nothing is saved.</span>
+            <a href="?">Exit demo</a>
+        </div>
+
+        <div id="loading-screen" class="loading-screen" hidden>
+            <div class="spinner"></div>
+            <div>Loading your tracker…</div>
+        </div>
+
+        <div id="setup-screen" class="setup-screen">
+            <h1>Connect your tracker</h1>
+            <p class="setup-intro">Your entries are saved in your own Google Sheet. Paste the details from your sheet's Apps Script below.</p>
+            <form onsubmit="handleSetup(event)">
+                <div class="form-group">
+                    <label for="setup-url">Web app URL</label>
+                    <input id="setup-url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+                    <p>From Deploy &gt; Manage deployments in your sheet's Apps Script.</p>
+                </div>
+                <div class="form-group">
+                    <label for="setup-secret">Password</label>
+                    <input id="setup-secret" type="password">
+                    <p>The SECRET you set in Script Properties.</p>
+                </div>
+                <button type="submit" class="btn btn-block">Connect</button>
+            </form>
+            <p class="setup-demo">No sheet yet? <a href="?demo">Try it with sample data</a></p>
+        </div>
+
+        <div id="dashboard" class="dashboard">
+            <!-- OVERVIEW TAB -->
+            <section id="overview" class="tab-content active">
+                <div class="hero">
+                    <div class="hero-text">
+                        <p id="today-date" class="hero-date"></p>
+                        <h1 id="greeting">Today</h1>
+                        <p id="hero-summary" class="hero-summary"></p>
+                    </div>
+                    <div class="stats-grid" id="stats-grid"></div>
+                </div>
+
+                <div class="overview-grid">
+                    <div class="card quick-add" id="quick-add">
+                        <h2 class="card-title">
+                            <span class="title-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+                            Log an entry
+                        </h2>
+                        <form onsubmit="handleAddEntry(event)">
+                            <div class="form-group">
+                                <label for="entry-name">Tracker</label>
+                                <select id="entry-name" onchange="renderEntryValueInputs()">
+                                    <option value="">Select a tracker...</option>
+                                </select>
+                            </div>
+                            <!-- Moments: a date and an optional time -->
+                            <div class="form-row" id="moment-fields">
+                                <div class="form-group">
+                                    <label for="entry-date">Date</label>
+                                    <input id="entry-date" type="date">
+                                </div>
+                                <div class="form-group">
+                                    <label for="entry-time">Time</label>
+                                    <input id="entry-time" type="time">
+                                </div>
+                            </div>
+                            <!-- Time spans: any two of start, end and duration -->
+                            <div id="span-fields" hidden>
+                                <div class="form-group">
+                                    <label for="span-mode">Enter as</label>
+                                    <select id="span-mode" onchange="updateSpanFields()">
+                                        <option value="start-end">Start and end</option>
+                                        <option value="start-duration">Start and duration</option>
+                                        <option value="end-duration">End and duration</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="span-start-group">
+                                    <label for="span-start">Start</label>
+                                    <input id="span-start" type="datetime-local" oninput="updateSpanSummary()">
+                                </div>
+                                <div class="form-group" id="span-end-group">
+                                    <label for="span-end">End</label>
+                                    <input id="span-end" type="datetime-local" oninput="updateSpanSummary()">
+                                </div>
+                                <div class="form-group" id="span-duration-group">
+                                    <label for="span-hours">Duration</label>
+                                    <div class="duration-inputs">
+                                        <input id="span-hours" type="number" min="0" step="1" oninput="updateSpanSummary()" aria-label="Hours">
+                                        <span>h</span>
+                                        <input id="span-minutes" type="number" min="0" max="59" step="5" oninput="updateSpanSummary()" aria-label="Minutes">
+                                        <span>m</span>
+                                    </div>
+                                </div>
+                                <p class="span-summary" id="span-summary"></p>
+                            </div>
+                            <div class="form-row" id="entry-values"></div>
+                            <div class="form-group">
+                                <label for="entry-notes">Notes</label>
+                                <input id="entry-notes" type="text" placeholder="Optional">
+                            </div>
+                            <button type="submit" class="btn btn-block">Add entry</button>
+                        </form>
+                    </div>
+
+                    <div>
+                        <div class="section-title">Your trackers <span class="section-hint">Tap one to log it</span></div>
+                        <div class="tracker-tiles" id="tracker-tiles"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TIMELINE TAB -->
+            <section id="timeline" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Timeline</h1>
+                        <p class="page-sub" id="timeline-sub"></p>
+                    </div>
+                    <div class="segmented" role="group" aria-label="Timeline view">
+                        <button type="button" class="seg-btn" data-view="hourly" onclick="setTimelineView('hourly')">By hour</button>
+                        <button type="button" class="seg-btn" data-view="list" onclick="setTimelineView('list')">List</button>
+                    </div>
+                </div>
+
+                <div class="card hourly-card" id="timeline-hourly">
+                    <div class="hourly-toolbar">
+                        <div class="cat-chips" id="hourly-chips" aria-label="Categories to show"></div>
+                        <div class="hourly-nav">
+                            <button type="button" class="btn btn-small btn-secondary" onclick="shiftTimeline(-1)" aria-label="Back one day">‹</button>
+                            <button type="button" class="btn btn-small btn-secondary" onclick="scrollTimelineToNow()">Now</button>
+                            <button type="button" class="btn btn-small btn-secondary" onclick="shiftTimeline(1)" aria-label="Forward one day">›</button>
+                            <span class="nav-gap"></span>
+                            <button type="button" class="btn btn-small btn-secondary" id="hourly-zoom-out" onclick="zoomTimeline(-1)" aria-label="Zoom out">−</button>
+                            <button type="button" class="btn btn-small btn-secondary" id="hourly-zoom-in" onclick="zoomTimeline(1)" aria-label="Zoom in">+</button>
+                        </div>
+                    </div>
+                    <div class="hourly-body">
+                        <div class="hourly-labels" id="hourly-labels"></div>
+                        <div class="hourly-scroller" id="hourly-scroller">
+                            <div class="hourly-canvas" id="hourly-canvas"></div>
+                        </div>
+                    </div>
+                    <p class="empty-state" id="hourly-empty" hidden>Nothing logged yet, or every category is hidden.</p>
+                    <div class="hourly-legend" id="hourly-legend"></div>
+                </div>
+
+                <div class="card" id="timeline-list" hidden>
+                    <div class="filters list-filters">
+                        <select id="filter-category" onchange="renderTimeline()" aria-label="Category"></select>
+                        <select id="filter-tracker" onchange="renderTimeline()" aria-label="Tracker"></select>
+                    </div>
+                    <div id="timeline-container"></div>
+                </div>
+            </section>
+
+            <!-- INSIGHTS TAB -->
+            <section id="insights" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Insights</h1>
+                        <p class="page-sub">Patterns in what you've logged.</p>
+                    </div>
+                    <div class="filters">
+                        <select id="insight-range" onchange="renderInsights()" aria-label="Time range">
+                            <option value="30">Last 30 days</option>
+                            <option value="90" selected>Last 90 days</option>
+                            <option value="365">Last year</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h2>What goes with…?</h2>
+                            <p class="card-sub">Which trackers look different around the days you log something, like a headache.</p>
+                        </div>
+                        <div class="filters">
+                            <select id="assoc-target" onchange="renderInsights()" aria-label="Tracker to focus on"></select>
+                            <select id="assoc-window" onchange="renderInsights()" aria-label="Which days to compare">
+                                <option value="0,0">Same day</option>
+                                <option value="1,1">Day before</option>
+                                <option value="0,1">Same day or day before</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="assoc-chart"></div>
+                </div>
+
+                <div class="insight-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <h2>By day of week</h2>
+                                <p class="card-sub">Spot weekly patterns, like drinking less water on weekends.</p>
+                            </div>
+                            <div class="filters">
+                                <select id="dow-metric" onchange="renderInsights()" aria-label="Tracker"></select>
+                                <select id="dow-mode" onchange="renderInsights()" aria-label="Measure">
+                                    <option value="avg">Average per logged day</option>
+                                    <option value="total">Total</option>
+                                    <option value="freq">How often logged</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="dow-chart"></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <h2>Compare two trackers</h2>
+                                <p class="card-sub">Each dot is a day where you logged both.</p>
+                            </div>
+                            <div class="filters">
+                                <select id="scatter-x" onchange="renderInsights()" aria-label="Horizontal axis"></select>
+                                <span class="filters-sep">vs</span>
+                                <select id="scatter-y" onchange="renderInsights()" aria-label="Vertical axis"></select>
+                            </div>
+                        </div>
+                        <div id="scatter-chart"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h2>Over time</h2>
+                            <p class="card-sub">Daily totals, with a 7-day average to smooth out the noise.</p>
+                        </div>
+                        <div class="filters">
+                            <select id="trend-metric" onchange="renderInsights()" aria-label="Tracker"></select>
+                        </div>
+                    </div>
+                    <div id="trend-chart"></div>
+                </div>
+            </section>
+
+            <!-- MANAGE TAB -->
+            <section id="manage" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Manage</h1>
+                        <p class="page-sub">Set up what you track and how it's grouped.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Trackers</h2>
+                        <button type="button" class="btn btn-small" onclick="openTrackerDialog()">+ New tracker</button>
+                    </div>
+                    <div class="item-list" id="tracker-list"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Categories</h2>
+                        <button type="button" class="btn btn-small" onclick="openCategoryDialog()">+ New category</button>
+                    </div>
+                    <div class="item-list" id="category-list"></div>
+                </div>
+
+                <div class="card danger-zone">
+                    <div>
+                        <h2>Sample data</h2>
+                        <p class="card-sub">Add about 4 months of realistic made-up entries to try out the timeline and insights. They're marked in the sheet so you can remove them all later without touching your own entries.</p>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn btn-secondary" onclick="handleAddSampleData(this)">Add sample data</button>
+                        <button class="btn btn-danger-outline" onclick="handleRemoveSampleData(this)">Remove sample data</button>
+                    </div>
+                </div>
+
+                <div class="card danger-zone">
+                    <div>
+                        <h2>Connection</h2>
+                        <p class="card-sub">Disconnecting only forgets the sheet on this device. Your data stays in the sheet.</p>
+                    </div>
+                    <button class="btn btn-danger-outline" onclick="logout()">Disconnect</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <dialog id="tracker-dialog">
+        <form onsubmit="handleSaveTracker(event)">
+            <h2 id="tracker-dialog-title">New tracker</h2>
+            <div class="dialog-message"></div>
+            <div class="form-group">
+                <label for="tracker-name">Name</label>
+                <input id="tracker-name" type="text" placeholder="e.g., Sleep">
+            </div>
+            <div class="form-group">
+                <label for="tracker-category">Category</label>
+                <select id="tracker-category"></select>
+            </div>
+            <div class="form-group">
+                <label for="tracker-timing">Timing</label>
+                <select id="tracker-timing">
+                    <option value="moment">Moment (like a coffee)</option>
+                    <option value="span">Time span, with a start and end (like sleep)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Values to record</label>
+                <div class="field-row field-head" aria-hidden="true"><span>Name</span><span>Unit</span></div>
+                <div id="tracker-fields"></div>
+                <button type="button" class="btn-link" onclick="addFieldRow()">+ Add another value</button>
+                <p class="hint">E.g. a run could record Distance (km) and Duration (mins). Leave the name blank if the tracker records a single value.</p>
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDialog('tracker-dialog')">Cancel</button>
+                <button type="submit" class="btn">Save</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="entry-dialog">
+        <div class="dialog-message"></div>
+        <div id="entry-dialog-body"></div>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-danger-outline" id="entry-dialog-delete">Delete</button>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-secondary" onclick="closeDialog('entry-dialog')">Close</button>
+        </div>
+    </dialog>
+
+    <dialog id="category-dialog">
+        <form onsubmit="handleSaveCategory(event)">
+            <h2 id="category-dialog-title">New category</h2>
+            <div class="dialog-message"></div>
+            <div class="form-group">
+                <label for="category-name">Name</label>
+                <input id="category-name" type="text" placeholder="e.g., Work">
+            </div>
+            <div class="form-group">
+                <label for="category-color">Color</label>
+                <input id="category-color" type="color">
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDialog('category-dialog')">Cancel</button>
+                <button type="submit" class="btn">Save</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/insights.js"></script>
+    <script src="js/timeline.js"></script>
+    <script src="js/manage.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

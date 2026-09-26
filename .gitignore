@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+# Identify your own Apps Script project and deployment; keep them out of the repo.
+.clasp.json
+.deployment.json

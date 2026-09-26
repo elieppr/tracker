@@ -1,0 +1,12 @@
+{
+  "name": "tracker",
+  "private": true,
+  "description": "Personal tracker dashboard backed by Google Sheets",
+  "scripts": {
+    "test": "node dev/server.test.js",
+    "deploy": "sh dev/deploy.sh"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  }
+}
