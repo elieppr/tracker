@@ -217,6 +217,11 @@
                     <div class="hourly-toolbar">
                         <div class="cat-chips" id="hourly-chips" aria-label="Categories to show"></div>
                         <div class="hourly-nav">
+                            <button type="button" class="btn btn-small btn-secondary mark-toggle" id="mark-toggle" onclick="toggleMarkMode()" aria-pressed="false">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 3v3M16 3v3"/></svg>
+                                Mark time
+                            </button>
+                            <span class="nav-gap"></span>
                             <button type="button" class="btn btn-small btn-secondary" onclick="shiftTimeline(-1)" aria-label="Back one day">‹</button>
                             <button type="button" class="btn btn-small btn-secondary" onclick="scrollTimelineToNow()">Now</button>
                             <button type="button" class="btn btn-small btn-secondary" onclick="shiftTimeline(1)" aria-label="Forward one day">›</button>
@@ -224,6 +229,10 @@
                             <button type="button" class="btn btn-small btn-secondary" id="hourly-zoom-out" onclick="zoomTimeline(-1)" aria-label="Zoom out">−</button>
                             <button type="button" class="btn btn-small btn-secondary" id="hourly-zoom-in" onclick="zoomTimeline(1)" aria-label="Zoom in">+</button>
                         </div>
+                    </div>
+                    <div class="mark-hint" id="mark-hint" hidden>
+                        <span>Drag across the timeline to mark a stretch of time. Drag over the lanes it's about, or start in the date row to cover all of them.</span>
+                        <button type="button" class="btn btn-small" onclick="toggleMarkMode(false)">Done</button>
                     </div>
                     <div class="hourly-body">
                         <div class="hourly-labels" id="hourly-labels"></div>
@@ -487,6 +496,47 @@
             <button type="button" class="btn" id="entry-dialog-end" hidden>End today</button>
             <button type="button" class="btn btn-secondary" onclick="closeDialog('entry-dialog')">Close</button>
         </div>
+    </dialog>
+
+    <dialog id="mark-dialog">
+        <form onsubmit="handleSaveMark(event)">
+            <h2 id="mark-dialog-title">Mark this time</h2>
+            <div class="dialog-message"></div>
+            <div class="form-group">
+                <label for="mark-label">Label</label>
+                <input id="mark-label" type="text" list="mark-labels" maxlength="80" placeholder="e.g., Exam week, Sick, Big argument">
+                <datalist id="mark-labels"></datalist>
+                <p class="hint">Use the same label for similar times, so Insights can compare them.</p>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mark-start">From</label>
+                    <input id="mark-start" type="datetime-local">
+                </div>
+                <div class="form-group">
+                    <label for="mark-end">To</label>
+                    <input id="mark-end" type="datetime-local">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Covers</label>
+                <div class="chip-row" id="mark-lanes"></div>
+            </div>
+            <div class="form-group">
+                <label>Color</label>
+                <div class="chip-row" id="mark-colors"></div>
+            </div>
+            <div class="form-group">
+                <label for="mark-notes">Notes</label>
+                <input id="mark-notes" type="text" placeholder="Optional">
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn btn-danger-outline" id="mark-delete" hidden onclick="deleteMark(this)">Delete</button>
+                <span class="spacer"></span>
+                <button type="button" class="btn btn-secondary" onclick="closeDialog('mark-dialog')">Cancel</button>
+                <button type="submit" class="btn">Save</button>
+            </div>
+        </form>
     </dialog>
 
     <dialog id="category-dialog">

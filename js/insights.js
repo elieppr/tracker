@@ -97,6 +97,22 @@ function buildSeries(list) {
             series.push(makeSeries(t, f, everyday ? 'amount' : 'event', values, label, i === 0 ? t.name : `${t.name} ${f.name}`, i === 0));
         });
     });
+    // Your own marks: every label becomes something to compare ("Exam week" days), counting
+    // each day a mark with that label touches.
+    [...new Set(marks.map(m => m.label))].forEach(label => {
+        const covered = new Set();
+        marks.filter(m => m.label === label).forEach(m => {
+            let last = m.end.slice(0, 10);
+            if (m.end.endsWith('T00:00')) last = addDays(last, -1);
+            for (let d = m.start.slice(0, 10); d <= last; d = addDays(d, 1)) covered.add(d);
+        });
+        const values = new Map(loggingDays.map(d => [d, covered.has(d) ? 1 : 0]));
+        const pseudoTracker = { name: label, category: '', fields: [], timing: 'days' };
+        const sr = makeSeries(pseudoTracker, { name: '', unit: '' }, 'episode', values, `Marked: ${label}`, label, true);
+        sr.key = JSON.stringify(['mark', label]);
+        sr.mark = true;
+        series.push(sr);
+    });
     return series;
 }
 
@@ -259,7 +275,8 @@ function renderInsights() {
     const byName = pattern => metrics.find(m => pattern.test(m.tracker.name));
 
     // Things that happen or not (headaches, feelings, a period) can be the focus.
-    const targetOptions = insightSeries.filter(sr => sr.primary && hasPresence(sr)).map(sr => ({ key: sr.key, label: sr.kind === 'feeling' ? `Feeling: ${sr.name}` : sr.name }));
+    const targetOptions = insightSeries.filter(sr => sr.primary && hasPresence(sr))
+        .map(sr => ({ key: sr.key, label: sr.kind === 'feeling' ? `Feeling: ${sr.name}` : sr.mark ? `Marked: ${sr.name}` : sr.name }));
     fillSelect(document.getElementById('assoc-target'), targetOptions,
         targetOptions.find(o => /headache/i.test(o.label)) || targetOptions.find(o => o.label.startsWith('Feeling')) || targetOptions[0]);
     fillSelect(document.getElementById('dow-metric'), metrics, byName(/water/i));
@@ -383,7 +400,9 @@ function renderAssociations() {
         let text;
         if (byPresence) {
             const when = windowText === 'on' ? 'on' : windowText;
-            text = r.sr.kind === 'episode'
+            text = r.sr.mark
+                ? `${pct(r.pT)} of ${focusDays} ${windowText === 'on' ? 'fell during' : `came ${windowText.replace('the day before', 'the day after')}`} your ${name} marks, vs ${pct(r.pO)} of ${otherLabel}.`
+                : r.sr.kind === 'episode'
                 ? `${name} was going on ${windowText === 'on' ? 'during' : windowText} ${pct(r.pT)} of ${focusDays}, vs ${pct(r.pO)} of ${otherLabel}.`
                 : r.sr.kind === 'feeling'
                     ? `You felt ${name} ${when} ${pct(r.pT)} of ${focusDays}, vs ${pct(r.pO)} of ${otherLabel}.`
@@ -437,7 +456,7 @@ function renderAssociations() {
             });
             return `
                 <div class="db-row" ${tip}>
-                    <div class="db-label">${escapeHtml(r.sr.name)}${r.sr.kind === 'feeling' ? ' <span class="db-kind">feeling</span>' : ''}${r.avg ? `<span class="db-avg">${escapeHtml(avgText(r))}</span>` : ''}</div>
+                    <div class="db-label">${escapeHtml(r.sr.name)}${r.sr.kind === 'feeling' ? ' <span class="db-kind">feeling</span>' : r.sr.mark ? ' <span class="db-kind">your mark</span>' : ''}${r.avg ? `<span class="db-avg">${escapeHtml(avgText(r))}</span>` : ''}</div>
                     <div class="db-track${presence ? '' : ' empty'}">
                         ${presence ? `
                             <span class="db-bar" style="left: ${Math.min(r.pT, r.pO) * 100}%; width: ${Math.abs(r.pT - r.pO) * 100}%"></span>

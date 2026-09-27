@@ -1490,13 +1490,11 @@ input[type="color"] {
 .tl-episode {
     position: absolute;
     z-index: 1;
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ep) 25%, transparent); /* day divider */
     background: color-mix(in srgb, var(--ep) 11%, transparent);
     border-bottom: 3px solid color-mix(in srgb, var(--ep) 70%, transparent);
     cursor: pointer;
     outline: none;
-}
-.tl-episode.ongoing {
-    border-bottom-style: dashed;
 }
 .tl-episode:hover,
 .tl-episode:focus-visible {
@@ -1513,6 +1511,94 @@ input[type="color"] {
     color: color-mix(in srgb, var(--ep) 75%, var(--ink));
     opacity: 0.85;
     white-space: nowrap;
+}
+/* Marks you draw on the timeline: translucent, behind entries; only the label is clickable. */
+.tl-mark {
+    position: absolute;
+    z-index: 1;
+    background: color-mix(in srgb, var(--mk) 16%, transparent);
+    border: 1.5px solid color-mix(in srgb, var(--mk) 55%, transparent);
+    border-radius: 6px;
+    pointer-events: none;
+}
+.tl-mark-label {
+    position: sticky;
+    left: 4px;
+    display: inline-block;
+    max-width: 100%;
+    margin: 3px;
+    padding: 1px 8px;
+    border: none;
+    border-radius: 999px;
+    background: var(--mk);
+    color: white;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 3;
+    box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--mk) 70%, transparent);
+}
+.tl-mark.preview {
+    z-index: 4;
+    background: color-mix(in srgb, var(--mk) 24%, transparent);
+    border-width: 2px;
+}
+.tl-mark.preview .tl-mark-label {
+    pointer-events: none;
+}
+.hourly-canvas.marking {
+    cursor: crosshair;
+    touch-action: none;
+}
+.hourly-canvas.marking .tl-block,
+.hourly-canvas.marking .tl-episode {
+    pointer-events: none;
+}
+.hourly-scroller.marking {
+    cursor: crosshair;
+}
+.mark-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+.mark-hint {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+}
+.chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.chip-btn.selected {
+    background: var(--cat);
+    border-color: var(--cat);
+    color: white;
+}
+.color-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    background: var(--dot);
+    box-shadow: 0 0 0 1px var(--border-strong);
+    cursor: pointer;
+}
+.color-dot.selected {
+    box-shadow: 0 0 0 2px var(--ink);
 }
 .tl-cycle {
     margin-left: 6px;

@@ -9,6 +9,8 @@ A personal dashboard for tracking habits, health metrics and time, with your dat
 
 Trackers have a timing: a **moment** (a coffee), a **time span** with start and end times (sleep, work), or **days** for things that last whole days (a cold, a trip). Day trackers can **repeat as a cycle** (a period): every day then has a cycle day, and Insights shows what tends to happen when in the cycle. Any tracker can also **add up into a daily total** (water, coffee), with quick +1 buttons and a way to set a whole day's total if you forgot to log.
 
+You can **mark stretches of time** yourself on the timeline ("Exam week", "Big argument"): turn on **Mark time** and drag across the hours and categories it's about. Each label can then be analyzed in Insights like any tracker.
+
 A **feelings check-in** lets you pick any number of feelings, each with its intensity (1-5), plus how manageable it felt, for tracking emotional regulation. Each feeling can be analyzed on its own.
 
 Insights are built to cope with forgetting to log: each tracker says what a day without an entry means ("it didn't happen", like a headache, or "I just didn't log it", like mood), and comparisons only use days where both things are known. Findings are marked **clear** when they hold up after correcting for comparing many things at once, or **possible** when they might still be chance.

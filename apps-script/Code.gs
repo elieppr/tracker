@@ -41,6 +41,13 @@ const SHEETS = {
     name: 'Categories',
     headers: ['Name', 'Color'],
   },
+  // Stretches of time you mark on the timeline yourself. Lanes is a JSON list of the
+  // categories it covers; empty means all of them.
+  marks: {
+    name: 'Marks',
+    headers: ['ID', 'Label', 'Start', 'End', 'Color', 'Lanes', 'Notes', 'Created'],
+    textColumns: ['Start', 'End'],
+  },
 };
 
 const DEFAULT_CATEGORIES = [
@@ -66,7 +73,33 @@ const ACTIONS = {
       entries: groupEntries(getTable('entries').rows),
       trackers: getTable('trackers').rows.filter(r => String(r.Name).trim()).map(rowToTracker),
       categories: getTable('categories').rows.filter(r => String(r.Name).trim()).map(rowToCategory),
+      marks: getTable('marks').rows.filter(r => String(r.ID).trim()).map(rowToMark),
     };
+  },
+
+  // Creates a mark, or updates the one with mark.id.
+  saveMark({ mark }) {
+    const clean = cleanMark(mark);
+    const record = {
+      Label: clean.label,
+      Start: clean.start,
+      End: clean.end,
+      Color: clean.color,
+      Lanes: JSON.stringify(clean.lanes),
+      Notes: clean.notes,
+    };
+    if (mark.id) {
+      if (!updateWhere('marks', r => String(r.ID) === mark.id, record)) throw new Error('Mark not found');
+      return { ...clean, id: mark.id };
+    }
+    const id = Utilities.getUuid();
+    appendRecords('marks', [{ ...record, ID: id, Created: new Date().toISOString() }]);
+    return { ...clean, id };
+  },
+
+  deleteMark({ id }) {
+    if (!deleteWhere('marks', r => String(r.ID) === id)) throw new Error('Mark not found');
+    return { id };
   },
 
   addEntry({ entry }) {
@@ -252,12 +285,24 @@ const ACTIONS = {
       }));
     });
     appendRecords('entries', records);
+    const marks = buildSampleMarks(new Date());
+    appendRecords('marks', marks.map(m => ({
+      ID: SAMPLE_PREFIX + Utilities.getUuid(),
+      Label: m.label,
+      Start: m.start,
+      End: m.end,
+      Color: m.color,
+      Lanes: JSON.stringify(m.lanes),
+      Notes: m.notes,
+      Created: new Date().toISOString(),
+    })));
     return { rows: records.length };
   },
 
   // Removes sample entries, plus any sample trackers/categories that nothing else uses.
   removeSampleData() {
     const removed = deleteWhere('entries', r => String(r.ID).startsWith(SAMPLE_PREFIX));
+    deleteWhere('marks', r => String(r.ID).startsWith(SAMPLE_PREFIX));
     const props = PropertiesService.getScriptProperties();
     const created = JSON.parse(props.getProperty('SAMPLE_CREATED') || '{"trackers":[],"categories":[]}');
 
@@ -495,6 +540,42 @@ function cleanTracker(tracker) {
   };
 }
 
+function cleanMark(mark) {
+  const label = String((mark && mark.label) || '').trim().slice(0, 80);
+  if (!label) throw new Error('Give the mark a label');
+  const start = String(mark.start || '');
+  const end = String(mark.end || '');
+  if (!TIME_PATTERN.test(start) || !TIME_PATTERN.test(end)) throw new Error('Invalid time');
+  if (end <= start) throw new Error('The end has to be after the start');
+  const lanes = Array.isArray(mark.lanes) ? mark.lanes.map(String).filter(Boolean) : [];
+  return {
+    label,
+    start,
+    end,
+    color: validColor(mark.color) ? mark.color : '#64748b',
+    lanes,
+    notes: String(mark.notes || '').trim(),
+  };
+}
+
+function rowToMark(r) {
+  let lanes = [];
+  try {
+    lanes = JSON.parse(r.Lanes || '[]');
+  } catch (err) {
+    lanes = [];
+  }
+  return {
+    id: String(r.ID),
+    label: String(r.Label),
+    start: formatDateTime(r.Start),
+    end: formatDateTime(r.End),
+    color: validColor(r.Color) ? r.Color : '#64748b',
+    lanes: Array.isArray(lanes) ? lanes.map(String) : [],
+    notes: String(r.Notes ?? ''),
+  };
+}
+
 function rowToCategory(r) {
   return { name: String(r.Name), color: validColor(r.Color) ? r.Color : FALLBACK_COLOR };
 }
@@ -562,6 +643,21 @@ const SAMPLE_TRACKERS = [
   },
   { name: 'Vacation', category: 'Time', timing: 'days', fields: [] },
 ];
+
+// A few example marks: a busy work stretch, a move, and an evening out.
+function buildSampleMarks(today) {
+  const pad = n => String(n).padStart(2, '0');
+  const day = (daysAgo, hour, minute = 0) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo, hour, minute);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return [
+    { label: 'Deadline crunch', start: day(18, 8), end: day(13, 20), color: '#f59e0b', lanes: [], notes: 'Big project due Friday' },
+    { label: 'Moving apartments', start: day(40, 9), end: day(38, 18), color: '#8b5cf6', lanes: [], notes: '' },
+    { label: 'Deadline crunch', start: day(75, 8), end: day(71, 20), color: '#f59e0b', lanes: [], notes: 'Quarterly report' },
+    { label: 'Late night out', start: day(9, 19), end: day(8, 1), color: '#ec4899', lanes: ['Habit', 'Mind'], notes: '' },
+  ];
+}
 
 // Matches generated values to a tracker's own fields: by position for single-value
 // trackers, otherwise by field name. Values with no matching field are dropped.

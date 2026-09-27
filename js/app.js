@@ -6,6 +6,7 @@ let secret = storageGet('tracker_secret');
 let entries = [];     // { id, date, tracker, category, notes, created, values: [{ field, value, unit }] }
 let trackers = [];    // { name, category, fields: [{ name, unit }] }
 let categories = [];  // { name, color }
+let marks = [];       // stretches of time marked on the timeline: { id, label, start, end, color, lanes, notes }
 let editingTracker = null;   // name of the tracker open in the dialog, null when creating
 let editingCategory = null;
 let renderedValueInputsFor; // undefined until the first render, so it always runs once
@@ -35,6 +36,7 @@ async function loadData() {
     entries = data.entries;
     trackers = data.trackers;
     categories = data.categories;
+    marks = data.marks || [];
     sortEntries();
     renderAll();
 }
@@ -86,6 +88,7 @@ function clearConnection() {
     entries = [];
     trackers = [];
     categories = [];
+    marks = [];
     document.body.classList.remove('connected');
     document.getElementById('setup-screen').style.display = 'block';
     document.getElementById('dashboard').classList.remove('active');

@@ -199,3 +199,21 @@ assert(call('saveTracker', { tracker: { name: 'Plain', category: 'Health', color
 call('addSampleData');
 assert(call('list').data.trackers.find(t => t.name === 'Mood').colors === 'higher-better', 'sample Mood colored as positive/negative');
 call('removeSampleData');
+
+// Marks: user-drawn stretches of time
+r = call('saveMark', { mark: { label: 'Exam week', start: '2026-09-20T08:00', end: '2026-09-24T18:00', color: '#f59e0b', lanes: [], notes: 'Finals' } });
+assert(r.ok && r.data.id && r.data.label === 'Exam week', 'mark saved');
+const markId = r.data.id;
+let markList = call('list').data.marks;
+assert(markList.some(m => m.id === markId && m.start === '2026-09-20T08:00' && m.end === '2026-09-24T18:00' && m.lanes.length === 0), 'mark read back');
+r = call('saveMark', { mark: { id: markId, label: 'Exams', start: '2026-09-20T08:00', end: '2026-09-25T18:00', color: '#8b5cf6', lanes: ['Health'], notes: '' } });
+assert(r.ok, 'mark updated');
+markList = call('list').data.marks;
+assert(markList.find(m => m.id === markId).label === 'Exams' && markList.find(m => m.id === markId).lanes.join() === 'Health', 'mark update read back');
+assert(!call('saveMark', { mark: { label: '', start: '2026-09-20T08:00', end: '2026-09-21T08:00' } }).ok, 'mark needs a label');
+assert(!call('saveMark', { mark: { label: 'x', start: '2026-09-21T08:00', end: '2026-09-20T08:00' } }).ok, 'mark end before start rejected');
+assert(call('deleteMark', { id: markId }).ok && !call('list').data.marks.some(m => m.id === markId), 'mark deleted');
+call('addSampleData');
+assert(call('list').data.marks.filter(m => m.label === 'Deadline crunch').length === 2, 'sample marks added');
+call('removeSampleData');
+assert(call('list').data.marks.length === 0, 'sample marks removed');

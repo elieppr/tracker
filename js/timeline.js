@@ -329,7 +329,8 @@ function drawHourly(force) {
         const dayWidth = x(next) - dx;
         const weekend = day.getDay() === 0 || day.getDay() === 6;
         const dateStr = localDateString(day);
-        const cycleDay = hourly.cycle ? hourly.cycle.dayOf(dateStr) : null;
+        // Cycle days for today and earlier only; future ones would just be a guess.
+        const cycleDay = hourly.cycle && dateStr <= localDateString(new Date()) ? hourly.cycle.dayOf(dateStr) : null;
         const cycleHint = cycleDay
             ? `<span class="tl-cycle${hourly.cycle.inPeriod(dateStr) ? ' period' : ''}" title="${escapeHtml(hourly.cycle.name)} cycle day ${cycleDay}">C${cycleDay}</span>`
             : '';
@@ -352,15 +353,23 @@ function drawHourly(force) {
         const color = blockColor(e);
         if (item.episode) {
             // Day episodes are a quiet backdrop: a faint tint across the lane with a thin line
-            // along the bottom, so the day's other entries stay in front.
-            const ex = x(item.start);
-            parts.push(`
-                <div class="tl-episode${e.end ? '' : ' ongoing'}" data-item="${index}" role="button" tabindex="0"
-                    style="left: ${ex}px; width: ${Math.max(MIN_BLOCK_WIDTH, x(item.end) - ex)}px; top: ${item.lane.y}px; height: ${item.lane.height}px; --ep: ${color.fill}"
-                    aria-label="${escapeHtml(`${e.tracker}, ${formatEntryTime(e)}`)}">
-                    <span class="tl-episode-label">${escapeHtml(e.tracker)}</span>
-                </div>
-            `);
+            // along the bottom, so the day's other entries stay in front. Each day is its own
+            // section, labeled with its day number ("Period · Day 1", "Day 2", ...).
+            episodeDates(e).forEach((date, i) => {
+                const dayStart = parseLocalDate(date).getTime();
+                const from = Math.max(dayStart, item.start.getTime());
+                const to = Math.min(dayStart + 24 * HOUR_MS, item.end.getTime());
+                if (to <= from || to < t0 || from > t1) return;
+                const dx = x(from);
+                const label = i === 0 ? `${e.tracker} · Day 1` : `Day ${i + 1}`;
+                parts.push(`
+                    <div class="tl-episode" data-item="${index}" data-day="${i + 1}" data-date="${date}" role="button" tabindex="0"
+                        style="left: ${dx}px; width: ${Math.max(MIN_BLOCK_WIDTH, x(to) - dx)}px; top: ${item.lane.y}px; height: ${item.lane.height}px; --ep: ${color.fill}"
+                        aria-label="${escapeHtml(`${e.tracker} day ${i + 1}, ${shortDate(date)}`)}">
+                        <span class="tl-episode-label">${escapeHtml(label)}</span>
+                    </div>
+                `);
+            });
             return;
         }
         const bx = x(item.start);
@@ -380,6 +389,14 @@ function drawHourly(force) {
                 data-item="${index}" aria-label="${escapeHtml(`${e.tracker}, ${valueText}`)}">${label}</button>
         `);
     });
+
+    // Marks you've drawn: translucent rectangles behind the entries, with a clickable label.
+    marks.forEach(mark => {
+        const box = markBox(mark);
+        if (!box || box.right < x0 || box.left > x1) return;
+        parts.push(markHtml(mark, box));
+    });
+    if (markDraft) parts.push(markPreviewHtml());
 
     // Now line.
     const nowX = x(Date.now());
@@ -449,8 +466,19 @@ function scrollTimelineToNow() {
 
 // ---- Hourly view: hover, click and drag ----
 
-function entryTip(item) {
+// `day` is set for one day of an episode: { number, date }.
+function entryTip(item, day) {
     const e = item.entry;
+    if (item.episode && day) {
+        return {
+            title: `${e.tracker} · Day ${day.number}`,
+            rows: [
+                { color: blockColor(e).fill, value: parseLocalDate(day.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), label: '' },
+                { value: '', label: e.end ? `${formatEntryTime(e)}` : `Started ${shortDate(episodeFirstDay(e))}, still going` },
+                ...(e.notes ? [{ value: '', label: e.notes }] : [])
+            ]
+        };
+    }
     const color = blockColor(e);
     const when = e.start
         ? formatEntryTime(e)
@@ -512,10 +540,21 @@ function openEntryDialog(item) {
 
     scroller.addEventListener('scroll', () => requestAnimationFrame(() => drawHourly(false)), { passive: true });
 
+    // For one day of an episode, which day it is.
+    const dayFor = target => {
+        const el = target.closest('[data-day]');
+        return el ? { number: Number(el.dataset.day), date: el.dataset.date } : null;
+    };
     canvas.addEventListener('pointermove', event => {
         if (dragState && dragState.moved) return;
+        const markEl = event.target.closest('.tl-mark-label');
+        if (markEl && !markDraft) {
+            const mark = marks.find(m => m.id === markEl.dataset.mark);
+            if (mark) showTipAt(markTip(mark), event.clientX, event.clientY);
+            return;
+        }
         const item = itemFor(event.target);
-        if (item) showTipAt(entryTip(item), event.clientX, event.clientY);
+        if (item) showTipAt(entryTip(item, dayFor(event.target)), event.clientX, event.clientY);
         else hideTip();
     });
     canvas.addEventListener('pointerleave', hideTip);
@@ -523,7 +562,7 @@ function openEntryDialog(item) {
         const item = itemFor(event.target);
         if (!item) return;
         const rect = event.target.getBoundingClientRect();
-        showTipAt(entryTip(item), rect.left, rect.bottom);
+        showTipAt(entryTip(item, dayFor(event.target)), rect.left, rect.bottom);
     });
     canvas.addEventListener('focusout', hideTip);
     canvas.addEventListener('keydown', event => {
@@ -536,6 +575,14 @@ function openEntryDialog(item) {
     });
     canvas.addEventListener('click', event => {
         if (dragState && dragState.moved) return; // the click ended a drag
+        const markEl = event.target.closest('.tl-mark-label');
+        if (markEl) {
+            const mark = marks.find(m => m.id === markEl.dataset.mark);
+            hideTip();
+            if (mark) openMarkDialog(mark);
+            return;
+        }
+        if (markMode) return;
         const item = itemFor(event.target);
         if (item) {
             hideTip();
@@ -545,7 +592,7 @@ function openEntryDialog(item) {
 
     // Drag with the mouse to move through time (touch and trackpads scroll natively).
     scroller.addEventListener('pointerdown', event => {
-        if (event.pointerType !== 'mouse' || event.button !== 0) return;
+        if (markMode || event.pointerType !== 'mouse' || event.button !== 0) return;
         dragState = { x: event.clientX, left: scroller.scrollLeft, moved: false };
     });
     window.addEventListener('pointermove', event => {
@@ -563,6 +610,51 @@ function openEntryDialog(item) {
         scroller.classList.remove('dragging');
         // Let the click handler see that this was a drag, then reset.
         setTimeout(() => { dragState = null; }, 0);
+    });
+
+    // While marking: drag to draw a rectangle (mouse, pen or finger).
+    const canvasPoint = event => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    canvas.addEventListener('pointerdown', event => {
+        if (!markMode || event.button > 0 || event.target.closest('.tl-mark-label')) return;
+        event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        const p = canvasPoint(event);
+        markDraft = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+        hideTip();
+        updateMarkPreview();
+    });
+    canvas.addEventListener('pointermove', event => {
+        if (!markDraft || markDraft.done) return;
+        const p = canvasPoint(event);
+        markDraft.x1 = p.x;
+        markDraft.y1 = p.y;
+        updateMarkPreview();
+    });
+    const finishDraft = () => {
+        if (!markDraft || markDraft.done) return;
+        if (Math.abs(markDraft.x1 - markDraft.x0) < 6) {
+            markDraft = null;
+            updateMarkPreview();
+            return;
+        }
+        markDraft.done = true;
+        const range = draftRange();
+        openMarkDialog({ start: toLocalDateTime(range.start), end: toLocalDateTime(range.end), lanes: range.lanes });
+    };
+    canvas.addEventListener('pointerup', finishDraft);
+    canvas.addEventListener('pointercancel', () => {
+        markDraft = null;
+        updateMarkPreview();
+    });
+    document.getElementById('mark-dialog').addEventListener('close', () => {
+        markDraft = null;
+        updateMarkPreview();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && markMode && !document.querySelector('dialog[open]')) toggleMarkMode(false);
     });
 
     let resizeTimer;
@@ -665,4 +757,182 @@ function renderTimelineEntry(e) {
             <button type="button" class="icon-btn" title="Delete entry" data-id="${escapeHtml(e.id)}" onclick="deleteEntry(this.dataset.id, this)">×</button>
         </div>
     `;
+}
+
+// ---- Marks: stretches of time you mark yourself ----
+
+const MARK_COLORS = ['#64748b', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '#ec4899'];
+let markMode = false;
+let markDraft = null;       // the rectangle being drawn: { x0, y0, x1, y1 } in canvas pixels
+let editingMark = null;     // id of the mark open in the dialog, null for a new one
+let markLanes = new Set();  // categories the mark covers; empty means all
+let markColor = MARK_COLORS[1];
+
+function toggleMarkMode(on = !markMode) {
+    markMode = on;
+    const button = document.getElementById('mark-toggle');
+    button.classList.toggle('active', on);
+    button.setAttribute('aria-pressed', String(on));
+    document.getElementById('mark-hint').hidden = !on;
+    document.getElementById('hourly-canvas').classList.toggle('marking', on);
+    document.getElementById('hourly-scroller').classList.toggle('marking', on);
+    if (!on) {
+        markDraft = null;
+        updateMarkPreview();
+    }
+}
+
+// Marks snap to steps that suit the zoom: 15 minutes when zoomed in, up to 3 hours zoomed out.
+function markStepMinutes() {
+    const hw = hourly.hourWidth;
+    return hw >= 48 ? 15 : hw >= 24 ? 30 : hw >= 12 ? 60 : 180;
+}
+
+function snapTime(ms) {
+    const step = markStepMinutes() * 60000;
+    return hourly.origin + Math.round((ms - hourly.origin) / step) * step;
+}
+
+// The lanes a drag crossed; starting in the date row means all of them.
+function lanesAcross(y0, y1) {
+    if (Math.min(y0, y1) < HEADER_HEIGHT) return [];
+    const top = Math.min(y0, y1);
+    const bottom = Math.max(y0, y1);
+    return hourly.lanes.filter(l => l.y + l.height > top && l.y < bottom).map(l => l.name);
+}
+
+function draftRange() {
+    const d = markDraft;
+    let start = snapTime(hourly.timeAt(Math.min(d.x0, d.x1)));
+    let end = snapTime(hourly.timeAt(Math.max(d.x0, d.x1)));
+    if (end <= start) end = start + markStepMinutes() * 60000;
+    return { start: new Date(start), end: new Date(end), lanes: lanesAcross(d.y0, d.y1) };
+}
+
+// Where a mark sits on the canvas: its time span across the lanes it covers (all if none of
+// its lanes are showing).
+function markBox(mark, lanes = mark.lanes) {
+    if (!hourly) return null;
+    const left = hourly.x(parseLocalDateTime(mark.start));
+    const right = hourly.x(parseLocalDateTime(mark.end));
+    const covered = hourly.lanes.filter(l => lanes.includes(l.name));
+    const top = covered.length ? Math.min(...covered.map(l => l.y)) : HEADER_HEIGHT;
+    const bottom = covered.length ? Math.max(...covered.map(l => l.y + l.height)) : hourly.height;
+    return { left, right, top, height: bottom - top };
+}
+
+function markHtml(mark, box) {
+    return `
+        <div class="tl-mark" style="left: ${box.left}px; width: ${Math.max(4, box.right - box.left)}px; top: ${box.top}px; height: ${box.height}px; --mk: ${mark.color}">
+            <button type="button" class="tl-mark-label" data-mark="${escapeHtml(mark.id)}">${escapeHtml(mark.label)}</button>
+        </div>
+    `;
+}
+
+function markPreviewHtml() {
+    const range = draftRange();
+    const box = markBox({ start: toLocalDateTime(range.start), end: toLocalDateTime(range.end) }, range.lanes);
+    const minutes = (range.end - range.start) / 60000;
+    return `
+        <div class="tl-mark preview" id="mark-preview" style="left: ${box.left}px; width: ${Math.max(4, box.right - box.left)}px; top: ${box.top}px; height: ${box.height}px; --mk: ${markColor}">
+            <span class="tl-mark-label">${formatTime(range.start)} – ${formatTime(range.end)} · ${formatDuration(minutes)}</span>
+        </div>
+    `;
+}
+
+function updateMarkPreview() {
+    const canvas = document.getElementById('hourly-canvas');
+    const old = document.getElementById('mark-preview');
+    if (old) old.remove();
+    if (markDraft && hourly) canvas.insertAdjacentHTML('beforeend', markPreviewHtml());
+}
+
+function markTip(mark) {
+    const start = parseLocalDateTime(mark.start);
+    const end = parseLocalDateTime(mark.end);
+    const sameDay = localDateString(start) === localDateString(end);
+    const when = sameDay
+        ? `${shortDate(localDateString(start))}, ${formatTime(start)} – ${formatTime(end)}`
+        : `${shortDate(localDateString(start))} ${formatTime(start)} – ${shortDate(localDateString(end))} ${formatTime(end)}`;
+    return {
+        title: mark.label,
+        rows: [
+            { color: mark.color, value: when, label: '' },
+            { value: '', label: mark.lanes.length ? mark.lanes.join(', ') : 'All categories' },
+            ...(mark.notes ? [{ value: '', label: mark.notes }] : []),
+            { value: '', label: 'Click to edit' }
+        ]
+    };
+}
+
+function openMarkDialog(mark) {
+    editingMark = mark.id || null;
+    document.getElementById('mark-dialog-title').textContent = mark.id ? 'Edit mark' : 'Mark this time';
+    document.getElementById('mark-label').value = mark.label || '';
+    document.getElementById('mark-labels').innerHTML = [...new Set(marks.map(m => m.label))]
+        .map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+    document.getElementById('mark-start').value = mark.start;
+    document.getElementById('mark-end').value = mark.end;
+    document.getElementById('mark-notes').value = mark.notes || '';
+    markLanes = new Set(mark.lanes || []);
+    markColor = mark.color || (marks.length ? marks[marks.length - 1].color : MARK_COLORS[1]);
+    renderMarkChoices();
+    document.getElementById('mark-delete').hidden = !mark.id;
+    const dialog = document.getElementById('mark-dialog');
+    dialog.querySelector('.dialog-message').innerHTML = '';
+    dialog.showModal();
+    if (!mark.id) document.getElementById('mark-label').focus();
+}
+
+function renderMarkChoices() {
+    const lanes = laneNames();
+    document.getElementById('mark-lanes').innerHTML = `
+        <button type="button" class="chip-btn${markLanes.size ? '' : ' selected'}" style="--cat: var(--accent)" onclick="toggleMarkLane('')">All categories</button>
+        ${lanes.map(name => `<button type="button" class="chip-btn${markLanes.has(name) ? ' selected' : ''}" style="--cat: ${categoryColor(name)}" data-name="${escapeHtml(name)}" onclick="toggleMarkLane(this.dataset.name)">${escapeHtml(name)}</button>`).join('')}
+    `;
+    document.getElementById('mark-colors').innerHTML = MARK_COLORS.map(c => `
+        <button type="button" class="color-dot${c === markColor ? ' selected' : ''}" style="--dot: ${c}" aria-label="Color ${c}" aria-pressed="${c === markColor}" onclick="pickMarkColor('${c}')"></button>
+    `).join('');
+}
+
+function toggleMarkLane(name) {
+    if (!name) markLanes.clear();
+    else if (markLanes.has(name)) markLanes.delete(name);
+    else markLanes.add(name);
+    renderMarkChoices();
+}
+
+function pickMarkColor(color) {
+    markColor = color;
+    renderMarkChoices();
+}
+
+function handleSaveMark(event) {
+    event.preventDefault();
+    const label = document.getElementById('mark-label').value.trim();
+    const start = document.getElementById('mark-start').value;
+    const end = document.getElementById('mark-end').value;
+    if (!label) return showError('Give the mark a label');
+    if (!start || !end) return showError('Pick when it starts and ends');
+    if (end <= start) return showError('The end has to be after the start');
+    const mark = { id: editingMark, label, start, end, color: markColor, lanes: [...markLanes], notes: document.getElementById('mark-notes').value.trim() };
+    runAction(submitButton(event), 'Saving…', async () => {
+        const saved = await api('saveMark', { mark });
+        marks = editingMark ? marks.map(m => (m.id === editingMark ? saved : m)) : [...marks, saved];
+        closeDialog('mark-dialog');
+        renderAll();
+        showSuccess(`✓ Marked "${label}"`);
+    });
+}
+
+function deleteMark(button) {
+    const mark = marks.find(m => m.id === editingMark);
+    if (!mark || !confirm(`Delete the mark "${mark.label}"?`)) return;
+    runAction(button, 'Deleting…', async () => {
+        await api('deleteMark', { id: mark.id });
+        marks = marks.filter(m => m.id !== mark.id);
+        closeDialog('mark-dialog');
+        renderAll();
+        showSuccess('✓ Mark deleted');
+    });
 }
