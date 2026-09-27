@@ -16,14 +16,49 @@ function openTrackerDialog(name) {
     const select = document.getElementById('tracker-category');
     select.innerHTML = categories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     if (tracker && categories.some(c => c.name === tracker.category)) select.value = tracker.category;
-    document.getElementById('tracker-timing').value = tracker && tracker.timing === 'span' ? 'span' : 'moment';
+    document.getElementById('tracker-timing').value = tracker ? tracker.timing : 'moment';
+    document.getElementById('tracker-tally').checked = Boolean(tracker && tracker.tally);
+    document.getElementById('tracker-cycle').checked = Boolean(tracker && tracker.cycle);
+    document.getElementById('tracker-feelings').checked = Boolean(tracker && tracker.feelings);
+    document.getElementById('tracker-missing').value = tracker ? tracker.missing || 'auto' : 'auto';
+    document.getElementById('tracker-colors').value = tracker ? tracker.colors || 'amount' : 'amount';
 
     document.getElementById('tracker-fields').innerHTML = '';
-    (tracker ? tracker.fields : [{ name: '', unit: '' }]).forEach(f => addFieldRow(f));
+    (tracker && tracker.fields.length ? tracker.fields : [{ name: '', unit: '' }]).forEach(f => addFieldRow(f));
+    updateTrackerDialog();
 
     const dialog = document.getElementById('tracker-dialog');
     dialog.querySelector('.dialog-message').innerHTML = '';
     dialog.showModal();
+}
+
+// Day trackers can't be daily totals, and their values are optional.
+function updateTrackerDialog() {
+    const days = document.getElementById('tracker-timing').value === 'days';
+    document.getElementById('tracker-tally-row').hidden = days;
+    document.getElementById('tracker-cycle-row').hidden = !days;
+    document.getElementById('tracker-feelings-row').hidden = days;
+    // Day trackers and check-ins already know what a missing day means.
+    document.getElementById('tracker-missing-row').hidden = days || document.getElementById('tracker-feelings').checked;
+    // Check-ins are always colored by positive/negative feelings; day trackers by their category.
+    document.getElementById('tracker-colors-row').hidden = days || document.getElementById('tracker-feelings').checked;
+    document.getElementById('tracker-fields-hint').textContent = days
+        ? 'Optional for day trackers: leave these empty to just track the days. You could add something like Intensity (1-5) to record for each episode.'
+        : 'E.g. a run could record Distance (km) and Duration (mins). Leave the name blank if the tracker records a single value.';
+}
+
+const DEFAULT_FEELINGS = ['Happy', 'Calm', 'Content', 'Grateful', 'Excited', 'Anxious', 'Stressed', 'Overwhelmed', 'Sad', 'Lonely', 'Irritable', 'Angry'];
+
+// Turning a tracker into a feelings check-in fills in a starter list of feelings (plus the
+// Coping rating) if it doesn't have its own values yet.
+function toggleFeelingsTracker() {
+    updateTrackerDialog();
+    if (!document.getElementById('tracker-feelings').checked) return;
+    const rows = [...document.querySelectorAll('#tracker-fields .field-row')]
+        .filter(row => row.querySelector('.field-name').value.trim() || row.querySelector('.field-unit').value.trim());
+    if (rows.length) return;
+    document.getElementById('tracker-fields').innerHTML = '';
+    DEFAULT_FEELINGS.concat(COPING_FIELD).forEach(name => addFieldRow({ name, unit: '1-5' }));
 }
 
 function addFieldRow(field = { name: '', unit: '' }) {
@@ -48,6 +83,11 @@ function handleSaveTracker(event) {
     const name = document.getElementById('tracker-name').value.trim();
     const category = document.getElementById('tracker-category').value;
     const timing = document.getElementById('tracker-timing').value;
+    const tally = timing !== 'days' && document.getElementById('tracker-tally').checked;
+    const cycle = timing === 'days' && document.getElementById('tracker-cycle').checked;
+    const feelings = timing !== 'days' && document.getElementById('tracker-feelings').checked;
+    const missing = document.getElementById('tracker-missing').value;
+    const colors = document.getElementById('tracker-colors').value;
     const fields = [...document.querySelectorAll('#tracker-fields .field-row')]
         .map(row => ({
             name: row.querySelector('.field-name').value.trim(),
@@ -56,14 +96,14 @@ function handleSaveTracker(event) {
         .filter(f => f.name || f.unit);
 
     if (!name) return showError('Please enter a tracker name');
-    if (!fields.length) return showError('Add at least one value to record');
+    if (!fields.length && timing !== 'days') return showError('Add at least one value to record');
     if (fields.length > 1 && fields.some(f => !f.name)) {
         return showError('Give each value a name when a tracker records more than one');
     }
 
     const originalName = editingTracker;
     runAction(submitButton(event), 'Saving…', async () => {
-        const saved = await api('saveTracker', { originalName, tracker: { name, category, timing, fields } });
+        const saved = await api('saveTracker', { originalName, tracker: { name, category, timing, tally, cycle, feelings, missing, colors, fields } });
         if (originalName) {
             trackers = trackers.map(t => t.name === originalName ? saved : t);
             entries.forEach(e => {

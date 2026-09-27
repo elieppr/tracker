@@ -71,8 +71,14 @@ function entryTimes(e) {
             ? created
             : new Date(parseLocalDate(e.date).getTime() + 12 * HOUR_MS);
     }
-    const end = e.end ? parseLocalDateTime(e.end) : new Date(start.getTime() + MOMENT_MINUTES * 60000);
-    return { start, end, moment: !e.end, approximate };
+    // Ongoing day episodes run up to now.
+    const episode = isEpisode(e);
+    const end = e.end
+        ? parseLocalDateTime(e.end)
+        : episode
+            ? new Date(Math.max(Date.now(), start.getTime() + MOMENT_MINUTES * 60000))
+            : new Date(start.getTime() + MOMENT_MINUTES * 60000);
+    return { start, end, moment: !e.end && !episode, approximate, episode };
 }
 
 function hexToRgb(hex) {
@@ -94,26 +100,80 @@ function readableTextOn(hex) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? '#1c1c1a' : '#ffffff';
 }
 
-// Each tracker gets its own shade of its category's color: lighter and darker steps in turn.
-function trackerColors() {
-    const byCategory = new Map();
-    const add = (name, category) => {
-        if (!byCategory.has(category)) byCategory.set(category, []);
-        const names = byCategory.get(category);
-        if (!names.includes(name)) names.push(name);
-    };
-    trackers.forEach(t => add(t.name, t.category));
-    entries.forEach(e => add(e.tracker, e.category));
+// A block's color shows its value. Within a category it's one color from light (low) to dark
+// (high), measured against that tracker's own range, so hours of sleep and glasses of water
+// each use the full scale. Feelings check-ins, and trackers set to "positive vs negative" (like
+// mood), use two colors instead: teal for positive, orange for negative, gray for mixed or
+// neutral, deeper the stronger. Tracker names stay on the blocks, so color never has to say
+// which tracker it is.
+const POSITIVE_COLOR = '#0d9488';
+const NEGATIVE_COLOR = '#e8590c';
+const NEUTRAL_COLOR = '#a8a29e';
 
-    const steps = [0, 0.4, -0.3, 0.62, -0.5, 0.78, -0.65];
-    const colors = new Map();
-    byCategory.forEach((names, category) => names.forEach((name, i) => {
-        const base = categoryColor(category);
-        const step = steps[i % steps.length];
-        const fill = step >= 0 ? mixHex(base, '#ffffff', step) : mixHex(base, '#000000', -step);
-        colors.set(name, { fill, text: readableTextOn(fill) });
-    }));
-    return colors;
+// [low, high] for scale units like "1-10".
+function scaleBounds(unit) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$/.exec(unit || '');
+    return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+// The value a block is colored by: the tracker's first value.
+function primaryValue(tracker, e) {
+    if (!tracker.fields.length) return null;
+    const v = tracker.fields.length > 1 ? e.values.find(x => x.field === tracker.fields[0].name) : e.values[0];
+    return v ? v.value : null;
+}
+
+// Per tracker, the range its values span (or the ends of its scale, like 1 to 10).
+function valueRanges() {
+    const ranges = new Map();
+    trackers.forEach(t => {
+        if (t.feelings || !t.fields.length) return;
+        const bounds = scaleBounds(t.fields[0].unit);
+        if (bounds) {
+            ranges.set(t.name, bounds);
+            return;
+        }
+        const values = entries.filter(e => e.tracker === t.name).map(e => primaryValue(t, e)).filter(v => v !== null);
+        if (values.length) ranges.set(t.name, [Math.min(...values), Math.max(...values)]);
+    });
+    return ranges;
+}
+
+// -1 (strongly negative) to 1 (strongly positive).
+function divergingColor(score) {
+    const s = Math.max(-1, Math.min(1, score));
+    return s >= 0 ? mixHex(NEUTRAL_COLOR, POSITIVE_COLOR, s) : mixHex(NEUTRAL_COLOR, NEGATIVE_COLOR, -s);
+}
+
+// A check-in's overall tone: pleasant feelings count up and unpleasant ones down, weighted by
+// how strong they were, so "Anxious 4" is quite negative and "Anxious 3 + Calm 3" is neutral.
+function checkInScore(e) {
+    const feelings = e.values.filter(v => v.field !== COPING_FIELD);
+    if (!feelings.length) return 0;
+    const net = feelings.reduce((sum, v) => sum + (isUnpleasant(v.field) ? -v.value : v.value), 0);
+    return net / (5 * feelings.length);
+}
+
+function blockColor(e) {
+    const tracker = trackers.find(t => t.name === e.tracker);
+    const base = categoryColor(e.category);
+    let fill = base;
+    if (tracker && tracker.feelings) {
+        fill = divergingColor(checkInScore(e));
+    } else if (tracker && !isEpisode(e)) {
+        const value = primaryValue(tracker, e);
+        const range = hourly && hourly.ranges.get(tracker.name);
+        if (value !== null && range) {
+            const [low, high] = range;
+            const share = Math.max(0, Math.min(1, high > low ? (value - low) / (high - low) : 0.5));
+            if (tracker.colors === 'higher-better' || tracker.colors === 'lower-better') {
+                fill = divergingColor((share - 0.5) * 2 * (tracker.colors === 'lower-better' ? -1 : 1));
+            } else {
+                fill = mixHex(mixHex(base, '#ffffff', 0.6), mixHex(base, '#000000', 0.35), share);
+            }
+        }
+    }
+    return { fill, text: readableTextOn(fill) };
 }
 
 // ---- Hourly view: layout ----
@@ -148,7 +208,7 @@ function buildHourlyLayout(viewWidth) {
     let y = HEADER_HEIGHT;
     const lanes = visibleLanes.map(name => {
         const rowEnds = [];
-        items.filter(i => i.entry.category === name).forEach(item => {
+        items.filter(i => i.entry.category === name && !i.episode).forEach(item => {
             let row = rowEnds.findIndex(end => end <= item.start.getTime());
             if (row === -1) {
                 row = rowEnds.length;
@@ -165,14 +225,16 @@ function buildHourlyLayout(viewWidth) {
     const laneByName = new Map(lanes.map(l => [l.name, l]));
     items.forEach(item => { item.lane = laneByName.get(item.entry.category); });
 
+    const cycle = mainCycleTracker();
     return {
+        cycle: cycle ? cycleCalendar(cycle.name) : null,
         hourWidth,
         origin,
         width: hours * hourWidth,
         height: y,
         lanes,
         items,
-        colors: trackerColors(),
+        ranges: valueRanges(),
         x: t => ((t instanceof Date ? t.getTime() : t) - origin) / HOUR_MS * hourWidth,
         timeAt: px => origin + (px / hourWidth) * HOUR_MS
     };
@@ -266,9 +328,14 @@ function drawHourly(force) {
         const next = parseLocalDate(addDays(localDateString(day), 1));
         const dayWidth = x(next) - dx;
         const weekend = day.getDay() === 0 || day.getDay() === 6;
+        const dateStr = localDateString(day);
+        const cycleDay = hourly.cycle ? hourly.cycle.dayOf(dateStr) : null;
+        const cycleHint = cycleDay
+            ? `<span class="tl-cycle${hourly.cycle.inPeriod(dateStr) ? ' period' : ''}" title="${escapeHtml(hourly.cycle.name)} cycle day ${cycleDay}">C${cycleDay}</span>`
+            : '';
         parts.push(`
             <div class="tl-day${weekend ? ' weekend' : ''}" style="left: ${dx}px; width: ${dayWidth}px">
-                <span class="tl-day-label">${dayHeaderLabel(day)}</span>
+                <span class="tl-day-label">${dayHeaderLabel(day)}${cycleHint}</span>
             </div>
         `);
         for (let h = step; h < 24; h += step) {
@@ -282,11 +349,26 @@ function drawHourly(force) {
     hourly.items.forEach((item, index) => {
         if (item.end.getTime() < t0 || item.start.getTime() > t1) return;
         const e = item.entry;
-        const color = hourly.colors.get(e.tracker) || { fill: FALLBACK_COLOR, text: '#ffffff' };
+        const color = blockColor(e);
+        if (item.episode) {
+            // Day episodes are a quiet backdrop: a faint tint across the lane with a thin line
+            // along the bottom, so the day's other entries stay in front.
+            const ex = x(item.start);
+            parts.push(`
+                <div class="tl-episode${e.end ? '' : ' ongoing'}" data-item="${index}" role="button" tabindex="0"
+                    style="left: ${ex}px; width: ${Math.max(MIN_BLOCK_WIDTH, x(item.end) - ex)}px; top: ${item.lane.y}px; height: ${item.lane.height}px; --ep: ${color.fill}"
+                    aria-label="${escapeHtml(`${e.tracker}, ${formatEntryTime(e)}`)}">
+                    <span class="tl-episode-label">${escapeHtml(e.tracker)}</span>
+                </div>
+            `);
+            return;
+        }
         const bx = x(item.start);
         const width = Math.max(MIN_BLOCK_WIDTH, x(item.end) - bx - 2);
         const top = item.lane.y + LANE_PADDING + item.row * ROW_HEIGHT;
-        const valueText = formatValues(e.values);
+        const valueText = isCheckIn(e)
+            ? e.values.filter(v => v.field !== COPING_FIELD).map(v => `${v.field} ${formatNumber(v.value)}`).join(' · ')
+            : formatValues(e.values);
         // The label sticks to the left edge of the view, so long spans that started off-screen
         // stay readable.
         const label = width > 46
@@ -294,7 +376,7 @@ function drawHourly(force) {
             : '';
         parts.push(`
             <button type="button" class="tl-block${item.moment ? ' moment' : ''}${item.approximate ? ' approximate' : ''}"
-                style="left: ${bx}px; top: ${top}px; width: ${width}px; height: ${ROW_HEIGHT - 4}px; background: ${color.fill}; color: ${color.text}"
+                style="left: ${bx}px; top: ${top}px; width: ${width}px; height: ${ROW_HEIGHT - 4}px; background-color: ${color.fill}; color: ${color.text}"
                 data-item="${index}" aria-label="${escapeHtml(`${e.tracker}, ${valueText}`)}">${label}</button>
         `);
     });
@@ -320,19 +402,24 @@ function renderCategoryChips() {
     }).join('');
 }
 
+// Explains the color scales: light to dark per category, and negative to positive for
+// feelings and mood-like trackers.
 function renderHourlyLegend() {
-    const groups = hourly.lanes.map(lane => {
-        const names = [...new Set([
-            ...trackers.filter(t => t.category === lane.name).map(t => t.name),
-            ...entries.filter(e => e.category === lane.name).map(e => e.tracker)
-        ])];
-        if (!names.length) return '';
-        return `<div class="legend-group">${names.map(n => {
-            const color = hourly.colors.get(n);
-            return `<span class="legend-key"><span class="key-swatch" style="background: ${color ? color.fill : FALLBACK_COLOR}"></span>${escapeHtml(n)}</span>`;
-        }).join('')}</div>`;
-    });
-    document.getElementById('hourly-legend').innerHTML = groups.join('');
+    const shown = new Set(hourly.lanes.map(l => l.name));
+    const byAmount = t => !t.feelings && t.timing !== 'days' && t.fields.length && (t.colors || 'amount') === 'amount';
+    const byTone = t => t.feelings || (t.timing !== 'days' && ['higher-better', 'lower-better'].includes(t.colors));
+    const ramps = hourly.lanes
+        .filter(lane => trackers.some(t => t.category === lane.name && byAmount(t)))
+        .map(lane => {
+            const base = lane.color;
+            return `<span class="legend-key"><span class="key-ramp" style="background: linear-gradient(90deg, ${mixHex(base, '#ffffff', 0.6)}, ${mixHex(base, '#000000', 0.35)})"></span>${escapeHtml(lane.name)}</span>`;
+        });
+    const tone = trackers.some(t => shown.has(t.category) && byTone(t))
+        ? `<span class="legend-key"><span class="key-ramp" style="background: linear-gradient(90deg, ${NEGATIVE_COLOR}, ${NEUTRAL_COLOR}, ${POSITIVE_COLOR})"></span>Negative → positive (feelings, mood)</span>`
+        : '';
+    document.getElementById('hourly-legend').innerHTML = ramps.length || tone
+        ? `${ramps.length ? `<div class="legend-group"><span class="legend-caption">Less → more:</span>${ramps.join('')}</div>` : ''}${tone ? `<div class="legend-group">${tone}</div>` : ''}`
+        : '';
 }
 
 function toggleTimelineCategory(name) {
@@ -364,40 +451,54 @@ function scrollTimelineToNow() {
 
 function entryTip(item) {
     const e = item.entry;
-    const color = hourly.colors.get(e.tracker);
+    const color = blockColor(e);
     const when = e.start
         ? formatEntryTime(e)
         : `${formatTime(item.start)} (time not recorded)`;
     return {
         title: `${e.tracker} · ${e.category}`,
         rows: [
-            { color: color ? color.fill : FALLBACK_COLOR, value: when, label: '' },
+            { color: color.fill, value: when, label: '' },
             ...e.values.map(v => ({ value: formatValue(v.value, v.unit), label: v.field })),
-            ...(e.notes ? [{ value: '', label: e.notes }] : [])
+            ...(e.notes ? [{ value: '', label: e.notes }] : []),
+            ...(cycleDayLabel(e) ? [{ value: '', label: cycleDayLabel(e) }] : [])
         ]
     };
 }
 
+// "Cycle day 14" for entries logged while a cycle is being tracked (not for the cycle itself).
+function cycleDayLabel(e) {
+    const cycle = mainCycleTracker();
+    if (!cycle || e.tracker === cycle.name) return '';
+    const day = cycleCalendar(cycle.name).dayOf(e.date);
+    return day ? `${cycle.name} cycle day ${day}` : '';
+}
+
 function openEntryDialog(item) {
     const e = item.entry;
-    const color = hourly.colors.get(e.tracker);
+    const color = blockColor(e);
     const day = parseLocalDate(e.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
     document.getElementById('entry-dialog-body').innerHTML = `
         <div class="entry-detail-head">
-            <span class="entry-detail-swatch" style="background: ${color ? color.fill : FALLBACK_COLOR}"></span>
+            <span class="entry-detail-swatch" style="background: ${color.fill}"></span>
             <h2>${escapeHtml(e.tracker)}</h2>
             ${categoryBadge(e.category)}
         </div>
-        <p class="entry-detail-when">${escapeHtml(day)}${e.start ? ` · ${escapeHtml(formatEntryTime(e))}` : ' · time not recorded'}</p>
+        <p class="entry-detail-when">${item.episode ? escapeHtml(formatEntryTime(e)) : `${escapeHtml(day)}${e.start ? ` · ${escapeHtml(formatEntryTime(e))}` : ' · time not recorded'}`}</p>
         <div class="tl-values">${e.values.map(v => `
             <span class="value-chip">${v.field ? `<span class="value-label">${escapeHtml(v.field)}</span> ` : ''}${escapeHtml(formatValue(v.value, v.unit))}</span>
         `).join('')}</div>
         ${e.notes ? `<p class="tl-notes">${escapeHtml(e.notes)}</p>` : ''}
+        ${cycleDayLabel(e) ? `<p class="entry-detail-cycle">${escapeHtml(cycleDayLabel(e))}</p>` : ''}
     `;
     const dialog = document.getElementById('entry-dialog');
     dialog.querySelector('.dialog-message').innerHTML = '';
     document.getElementById('entry-dialog-delete').onclick = event =>
         deleteEntry(e.id, event.currentTarget, 'Deleting…', () => closeDialog('entry-dialog'));
+    // Ongoing day episodes can be ended from here.
+    const endButton = document.getElementById('entry-dialog-end');
+    endButton.hidden = !(item.episode && !e.end);
+    endButton.onclick = event => endEpisode(e.id, localDateString(new Date()), event.currentTarget, () => closeDialog('entry-dialog'));
     dialog.showModal();
 }
 
@@ -425,6 +526,14 @@ function openEntryDialog(item) {
         showTipAt(entryTip(item), rect.left, rect.bottom);
     });
     canvas.addEventListener('focusout', hideTip);
+    canvas.addEventListener('keydown', event => {
+        // Episode bands aren't buttons, so open them with Enter/Space here.
+        if ((event.key === 'Enter' || event.key === ' ') && event.target.classList.contains('tl-episode')) {
+            event.preventDefault();
+            const item = itemFor(event.target);
+            if (item) openEntryDialog(item);
+        }
+    });
     canvas.addEventListener('click', event => {
         if (dragState && dragState.moved) return; // the click ended a drag
         const item = itemFor(event.target);

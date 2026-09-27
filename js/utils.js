@@ -72,9 +72,11 @@ function formatDuration(minutes) {
     return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-// "7:00 AM", or "11:30 PM – 7:00 AM (7h 30m)" for time spans.
+// "7:00 AM", "11:30 PM – 7:00 AM (7h 30m)" for time spans, or "Sep 2 – Sep 6 (5 days)" for
+// day episodes.
 function formatEntryTime(entry) {
     if (!entry.start) return '';
+    if (isEpisode(entry)) return formatEpisodeRange(entry);
     const start = parseLocalDateTime(entry.start);
     if (!entry.end) return formatTime(start);
     const end = parseLocalDateTime(entry.end);
@@ -89,11 +91,18 @@ function formatNumber(n) {
     return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
-// "5 km", or "5 / 10" for scale units like "1-10".
+// "5 km", "1 glass", or "5 / 10" for scale units like "1-10".
 function formatValue(value, unit) {
     const scale = /^\s*[01]\s*[-–]\s*(\d+)\s*$/.exec(unit || '');
     if (scale) return `${formatNumber(value)} / ${scale[1]}`;
-    return `${formatNumber(value)} ${unit || ''}`.trim();
+    return `${formatNumber(value)} ${Math.abs(value) === 1 ? singular(unit || '') : unit || ''}`.trim();
+}
+
+// "glasses" → "glass", "cups" → "cup", "hours" → "hour"; leaves "km" and "lbs"-style units alone.
+function singular(unit) {
+    if (/(ss|sh|ch|x)es$/i.test(unit)) return unit.slice(0, -2);
+    if (/[^s]s$/i.test(unit) && unit.length > 3) return unit.slice(0, -1);
+    return unit;
 }
 
 function plural(n, word, pluralWord = word + 's') {
@@ -137,4 +146,26 @@ const ICONS = {
 
 function icon(name, className = 'icon') {
     return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+}
+
+// ---- Feelings ----
+
+// In a feelings check-in, every value is a feeling except this optional rating of how
+// manageable it all felt (for emotional regulation).
+const COPING_FIELD = 'Coping';
+const UNPLEASANT_FEELINGS = ['anxious', 'stressed', 'overwhelmed', 'sad', 'lonely', 'irritable', 'angry', 'frustrated',
+    'afraid', 'scared', 'worried', 'nervous', 'ashamed', 'guilty', 'jealous', 'hurt', 'disappointed', 'bored', 'tired',
+    'exhausted', 'restless', 'numb', 'hopeless', 'embarrassed', 'annoyed', 'upset', 'down', 'insecure'];
+
+function feelingNames(tracker) {
+    return tracker.fields.map(f => f.name).filter(n => n && n !== COPING_FIELD);
+}
+
+function isUnpleasant(feeling) {
+    return UNPLEASANT_FEELINGS.includes(feeling.trim().toLowerCase());
+}
+
+function isCheckIn(e) {
+    const tracker = trackers.find(t => t.name === e.tracker);
+    return Boolean(tracker && tracker.feelings);
 }

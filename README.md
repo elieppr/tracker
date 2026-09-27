@@ -7,6 +7,12 @@ A personal dashboard for tracking habits, health metrics and time, with your dat
 - **Insights**: find what goes along with something (like headaches), weekly patterns, how two trackers relate, and trends over time.
 - **Manage**: create and edit trackers (each can record several values, e.g. distance and duration) and categories.
 
+Trackers have a timing: a **moment** (a coffee), a **time span** with start and end times (sleep, work), or **days** for things that last whole days (a cold, a trip). Day trackers can **repeat as a cycle** (a period): every day then has a cycle day, and Insights shows what tends to happen when in the cycle. Any tracker can also **add up into a daily total** (water, coffee), with quick +1 buttons and a way to set a whole day's total if you forgot to log.
+
+A **feelings check-in** lets you pick any number of feelings, each with its intensity (1-5), plus how manageable it felt, for tracking emotional regulation. Each feeling can be analyzed on its own.
+
+Insights are built to cope with forgetting to log: each tracker says what a day without an entry means ("it didn't happen", like a headache, or "I just didn't log it", like mood), and comparisons only use days where both things are known. Findings are marked **clear** when they hold up after correcting for comparing many things at once, or **possible** when they might still be chance.
+
 ## Try it
 
 Open `index.html?demo` to explore the app with sample data. Nothing is saved.
@@ -53,6 +59,7 @@ js/utils.js          Dates, formatting, storage helpers
 js/api.js            Requests to the Apps Script backend, loading states, messages
 js/app.js            App state, connection, Overview and the entry form
 js/timeline.js       Timeline tab (hour-by-hour view and list)
+js/episodes.js       Day episodes and cycles (periods, colds, trips): day counts, cycle days, typical length and gap
 js/insights.js       Insights charts and analysis
 js/manage.js         Tracker and category editing
 apps-script/Code.gs  Backend that runs in your Google Sheet
@@ -61,6 +68,7 @@ dev/gas-mock.js      In-memory stand-in for Google Sheets (demo mode and tests)
 dev/demo.js          Sample data for demo mode
 dev/server.test.js   Backend tests
 dev/deploy.sh        Pushes and redeploys the backend (npm run deploy)
+dev/serve.py         Local server with caching off: python3 dev/serve.py, then open localhost:8000/?demo
 ```
 
 The scripts are plain `<script>` files rather than modules, so the app works when you open `index.html` straight from disk.

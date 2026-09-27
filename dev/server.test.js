@@ -78,8 +78,14 @@ assert(runs.length > 10 && runs.every(e => e.values.map(v => v.field).join() ===
 const waterOn = d => (r.data.entries.find(e => e.date === d && e.tracker === 'Water Intake') || {}).values;
 const hDays = new Set(headaches.map(e => e.date));
 const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
-const wH = avg(r.data.entries.filter(e => e.tracker === 'Water Intake' && hDays.has(e.date)).map(e => e.values[0].value));
-const wO = avg(r.data.entries.filter(e => e.tracker === 'Water Intake' && !hDays.has(e.date)).map(e => e.values[0].value));
+// Water is logged in several sips a day, so compare daily totals.
+const waterByDay = new Map();
+r.data.entries.filter(e => e.tracker === 'Water Intake').forEach(e => waterByDay.set(e.date, (waterByDay.get(e.date) || 0) + e.values[0].value));
+const wH = avg([...waterByDay].filter(([d]) => hDays.has(d)).map(([, v]) => v));
+const wO = avg([...waterByDay].filter(([d]) => !hDays.has(d)).map(([, v]) => v));
+assert([...waterByDay.keys()].some(d => r.data.entries.filter(e => e.tracker === 'Water Intake' && e.date === d).length > 1), 'sample water logged several times a day');
+assert(r.data.trackers.find(t => t.name === 'Water Intake').tally && r.data.trackers.find(t => t.name === 'Coffee').tally, 'water and coffee are tallies');
+assert(!r.data.trackers.find(t => t.name === 'Sleep').tally, 'sleep is not a tally');
 assert(wH < wO - 0.4, `less water on headache days (${wH.toFixed(1)} vs ${wO.toFixed(1)})`);
 r = call('removeSampleData');
 assert(r.ok, 'remove sample data');
@@ -110,4 +116,86 @@ assert(sleeps.every(e => Math.abs((new Date(e.end) - new Date(e.start)) / 360000
 call('removeSampleData');
 call('addSampleData');
 assert(call('list').data.entries.every(e => !e.id.startsWith('sample-') || new Date(e.end || e.start) <= new Date()), 'no sample entries in the future');
+call('removeSampleData');
+
+// Tally setting round-trips
+r = call('saveTracker', { tracker: { name: 'Steps', category: 'Health', tally: true, fields: [{ name: '', unit: 'steps' }] } });
+assert(r.ok && r.data.tally === true, 'tally tracker saved');
+assert(call('list').data.trackers.find(t => t.name === 'Steps').tally === true, 'tally read back');
+call('saveTracker', { originalName: 'Steps', tracker: { name: 'Steps', category: 'Health', tally: false, fields: [{ name: '', unit: 'steps' }] } });
+assert(call('list').data.trackers.find(t => t.name === 'Steps').tally === false, 'tally can be turned off');
+assert(call('list').data.trackers.find(t => t.name === 'Water Intake').tally === true, 'default Water Intake is a tally');
+
+// Day episodes (e.g. a period): no values needed, ongoing until ended with updateEntry
+r = call('saveTracker', { tracker: { name: 'Cold', category: 'Health', timing: 'days', fields: [] } });
+assert(r.ok && r.data.timing === 'days' && r.data.fields.length === 0, 'days tracker saved without values');
+assert(call('list').data.trackers.find(t => t.name === 'Cold').fields.length === 0, 'days tracker read back with no values');
+assert(!call('saveTracker', { tracker: { name: 'Nothing', category: 'Health', timing: 'moment', fields: [] } }).ok, 'other trackers still need a value');
+r = call('addEntry', { entry: { date: '2026-09-20', tracker: 'Cold', start: '2026-09-20T00:00', end: '', values: [] } });
+assert(r.ok && r.data.values.length === 0 && r.data.end === '', 'ongoing episode added without values');
+const coldId = r.data.id;
+let cold = call('list').data.entries.find(e => e.id === coldId);
+assert(cold && cold.values.length === 0 && cold.start === '2026-09-20T00:00' && cold.end === '', 'episode read back as ongoing');
+r = call('updateEntry', { id: coldId, changes: { end: '2026-09-24T00:00' } });
+assert(r.ok && r.data.end === '2026-09-24T00:00', 'episode ended with updateEntry');
+assert(call('list').data.entries.find(e => e.id === coldId).end === '2026-09-24T00:00', 'end saved');
+assert(!call('updateEntry', { id: coldId, changes: { end: '2026-09-19T00:00' } }).ok, 'end before start rejected');
+assert(!call('updateEntry', { id: 'nope', changes: { end: '2026-09-24T00:00' } }).ok, 'unknown entry rejected');
+assert(!call('addEntry', { entry: { date: '2026-09-20', tracker: 'Water Intake', values: [] } }).ok, 'moments still need a value');
+call('addSampleData');
+const sampleList = call('list').data;
+assert(sampleList.trackers.find(t => t.name === 'Period').timing === 'days', 'sample Period tracker is a days tracker');
+const periodsLogged = sampleList.entries.filter(e => e.tracker === 'Period');
+assert(periodsLogged.length >= 3 && periodsLogged.every(e => e.values.length === 0 && e.start.endsWith('T00:00')), `sample periods logged (${periodsLogged.length})`);
+assert(sampleList.entries.some(e => e.tracker === 'Vacation'), 'sample vacation episode');
+call('removeSampleData');
+assert(!call('list').data.trackers.some(t => t.name === 'Period'), 'sample Period tracker removed');
+
+// Cycle setting (only for day trackers)
+r = call('saveTracker', { tracker: { name: 'Cycle Test', category: 'Health', timing: 'days', cycle: true, fields: [] } });
+assert(r.ok && r.data.cycle === true, 'cycle tracker saved');
+assert(call('list').data.trackers.find(t => t.name === 'Cycle Test').cycle === true, 'cycle read back');
+r = call('saveTracker', { tracker: { name: 'Not A Cycle', category: 'Health', timing: 'moment', cycle: true, fields: [{ name: '', unit: 'x' }] } });
+assert(r.ok && r.data.cycle === false, 'cycle ignored for non-day trackers');
+call('addSampleData');
+const cycleList = call('list').data;
+assert(cycleList.trackers.find(t => t.name === 'Period').cycle === true, 'sample Period is a cycle');
+assert(['Cramps', 'Bloating', 'Mood'].every(n => cycleList.entries.some(e => e.tracker === n)), 'sample symptoms logged');
+assert(cycleList.categories.some(c => c.name === 'Cycle'), 'sample Cycle category');
+call('removeSampleData');
+
+// Feelings check-ins: several feelings (with intensity) in one entry
+r = call('saveTracker', { tracker: { name: 'Check-in', category: 'Health', timing: 'moment', feelings: true, fields: [{ name: 'Calm', unit: '1-5' }, { name: 'Anxious', unit: '1-5' }, { name: 'Coping', unit: '1-5' }] } });
+assert(r.ok && r.data.feelings === true, 'feelings tracker saved');
+assert(call('list').data.trackers.find(t => t.name === 'Check-in').feelings === true, 'feelings read back');
+r = call('addEntry', { entry: { date: '2026-09-24', tracker: 'Check-in', start: '2026-09-24T21:00', values: [{ field: 'Anxious', unit: '1-5', value: 4 }, { field: 'Coping', unit: '1-5', value: 2 }] } });
+assert(r.ok && r.data.values.length === 2, 'check-in with two values saved');
+const checkin = call('list').data.entries.find(e => e.id === r.data.id);
+assert(checkin.values.map(v => `${v.field}:${v.value}`).join() === 'Anxious:4,Coping:2', 'check-in read back');
+assert(call('saveTracker', { tracker: { name: 'Days Feelings', category: 'Health', timing: 'days', feelings: true, fields: [] } }).data.feelings === false, 'day trackers cannot be check-ins');
+call('addSampleData');
+const feelList = call('list').data;
+assert(feelList.trackers.find(t => t.name === 'Feelings').feelings, 'sample Feelings check-in tracker');
+const sampleCheckins = feelList.entries.filter(e => e.tracker === 'Feelings');
+assert(sampleCheckins.length > 30 && sampleCheckins.every(e => e.values.length >= 1), `sample check-ins (${sampleCheckins.length})`);
+assert(sampleCheckins.some(e => e.values.length >= 3), 'some check-ins have several feelings');
+call('removeSampleData');
+
+// What a missing day means
+r = call('saveTracker', { tracker: { name: 'Migraine', category: 'Health', missing: 'zero', fields: [{ name: '', unit: '1-10' }] } });
+assert(r.ok && r.data.missing === 'zero', 'missing setting saved');
+assert(call('list').data.trackers.find(t => t.name === 'Migraine').missing === 'zero', 'missing setting read back');
+assert(call('saveTracker', { tracker: { name: 'Bogus', category: 'Health', missing: 'maybe', fields: [{ name: '', unit: 'x' }] } }).data.missing === 'auto', 'unknown missing values fall back to auto');
+call('addSampleData');
+const missingList = call('list').data.trackers;
+assert(missingList.find(t => t.name === 'Mood').missing === 'unknown' && missingList.find(t => t.name === 'Headache').missing === 'zero', 'sample trackers say what a missing day means');
+call('removeSampleData');
+
+// Timeline color setting
+r = call('saveTracker', { tracker: { name: 'Energy', category: 'Health', colors: 'higher-better', fields: [{ name: '', unit: '1-5' }] } });
+assert(r.ok && r.data.colors === 'higher-better', 'colors setting saved');
+assert(call('list').data.trackers.find(t => t.name === 'Energy').colors === 'higher-better', 'colors setting read back');
+assert(call('saveTracker', { tracker: { name: 'Plain', category: 'Health', colors: 'rainbow', fields: [{ name: '', unit: 'x' }] } }).data.colors === 'amount', 'unknown colors fall back to amount');
+call('addSampleData');
+assert(call('list').data.trackers.find(t => t.name === 'Mood').colors === 'higher-better', 'sample Mood colored as positive/negative');
 call('removeSampleData');

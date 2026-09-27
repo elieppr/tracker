@@ -112,6 +112,8 @@ function renderAll() {
     renderStats();
     renderEntryTrackerOptions();
     renderEntryValueInputs();
+    renderTallyPanel();
+    renderFeelingsFields();
     renderTimeline();
     renderInsights();
     renderTrackerList();
@@ -186,27 +188,92 @@ function renderStats() {
     container.innerHTML = trackersByCategory().flatMap(g => g.trackers).map(t => {
         const last = entries.find(e => e.tracker === t.name); // entries are sorted newest first
         const weekCount = thisWeek.filter(e => e.tracker === t.name).length;
-        // Mini chart of the last 7 days: the first value's daily total, relative to the week's max.
-        const daily = days.map(d => entries
-            .filter(e => e.tracker === t.name && e.date === d)
-            .reduce((sum, e) => sum + (e.values[0] ? e.values[0].value : 0), 0));
+        // Mini chart of the last 7 days: the first value's daily total relative to the week's max,
+        // or for day trackers, which days an episode covered.
+        const daily = t.timing === 'days'
+            ? days.map(d => (episodesOf(t.name).some(e => episodeDates(e).includes(d)) ? 1 : 0))
+            : days.map(d => entries
+                .filter(e => e.tracker === t.name && e.date === d)
+                .reduce((sum, e) => sum + (e.values[0] ? e.values[0].value : 0), 0));
         const max = Math.max(...daily);
         const bars = daily.map((v, i) => `<span class="spark-bar${v ? '' : ' empty'}${i === 6 ? ' today' : ''}" style="height: ${v && max ? Math.max(18, (v / max) * 100) : 10}%"></span>`).join('');
+
+        // Tally trackers show today's running total (and a +1 button) instead of the last entry;
+        // day trackers show the day of an ongoing episode (with End) or when the next is due (with Start).
+        let value = last ? formatValues(last.values) : '—';
+        let when = last ? `Last logged ${relativeDay(last.date)}` : 'Not logged yet';
+        let plusButton = '';
+        let weekLabel = `${weekCount}×`;
+        if (t.timing === 'days') {
+            const stats = episodeStats(t.name);
+            const tileButton = (label, action, title) =>
+                `<button type="button" class="tile-plus" title="${title}" onclick="event.stopPropagation(); ${action}">${label}</button>`;
+            weekLabel = `${daily.filter(Boolean).length}d`;
+            const cycleDayToday = t.cycle ? cycleCalendar(t.name).dayOf(today) : null;
+            if (t.cycle && cycleDayToday) {
+                // Cycles always have a day: "Cycle day 17", with the period or the next start below.
+                value = `Cycle day ${cycleDayToday}`;
+                when = stats.ongoing
+                    ? `${t.name} day ${episodeLength(stats.ongoing)}`
+                    : stats.next
+                        ? `Next ${t.name.toLowerCase()} ~${shortDate(stats.next)}`
+                        : `${t.name} ended ${relativeDay(episodeLastDay(stats.latest))}`;
+                plusButton = stats.ongoing
+                    ? tileButton('End', `confirmEndEpisode('${escapeHtml(stats.ongoing.id)}', this)`, 'Ended today')
+                    : tileButton('Start', `startEpisode(this.closest('.tracker-tile').dataset.name, this)`, 'Started today');
+            } else if (stats.ongoing) {
+                value = `Day ${episodeLength(stats.ongoing)}`;
+                when = `Since ${shortDate(episodeFirstDay(stats.ongoing))}`;
+                plusButton = tileButton('End', `confirmEndEpisode('${escapeHtml(stats.ongoing.id)}', this)`, 'Ended today');
+            } else {
+                const latestRange = stats.latest
+                    ? episodeFirstDay(stats.latest) === episodeLastDay(stats.latest)
+                        ? shortDate(episodeFirstDay(stats.latest))
+                        : `${shortDate(episodeFirstDay(stats.latest))} – ${shortDate(episodeLastDay(stats.latest))}`
+                    : '—';
+                value = stats.next ? `Next ~${shortDate(stats.next)}` : latestRange;
+                when = stats.latest ? `Last ended ${relativeDay(episodeLastDay(stats.latest))}` : 'Not logged yet';
+                plusButton = tileButton('Start', `startEpisode(this.closest('.tracker-tile').dataset.name, this)`, 'Started today');
+            }
+        }
+        if (t.feelings && last) {
+            value = last.values
+                .filter(v => v.field !== COPING_FIELD)
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 2)
+                .map(v => v.field)
+                .join(' · ') || '—';
+            when = `Checked in ${relativeDay(last.date)}`;
+        }
+        if (t.tally) {
+            const todayLogs = entries.filter(e => e.tracker === t.name && e.date === today).length;
+            value = formatTotals(t, dayTotals(t, today));
+            when = todayLogs ? `Today · ${plural(todayLogs, 'log')}` : 'Nothing yet today';
+            if (t.fields.length === 1) {
+                plusButton = `<button type="button" class="tile-plus" title="Add 1 ${escapeHtml(t.fields[0].unit)}"
+                    onclick="event.stopPropagation(); quickTally(1, this, this.closest('.tracker-tile').dataset.name)">+1</button>`;
+            }
+        }
         return `
-            <button type="button" class="tracker-tile" style="--cat: ${categoryColor(t.category)}" data-name="${escapeHtml(t.name)}" onclick="selectTrackerForEntry(this.dataset.name)">
+            <div class="tracker-tile${t.tally ? ' tally' : ''}" role="button" tabindex="0" style="--cat: ${categoryColor(t.category)}" data-name="${escapeHtml(t.name)}"
+                onclick="selectTrackerForEntry(this.dataset.name)"
+                onkeydown="if (event.target === this && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectTrackerForEntry(this.dataset.name); }">
                 <span class="tile-top">
                     <span class="tile-avatar">${escapeHtml(t.name.trim().charAt(0).toUpperCase())}</span>
                     <span class="tile-name">${escapeHtml(t.name)}</span>
-                    <span class="tile-week" title="Entries in the last 7 days">${weekCount}×</span>
+                    <span class="tile-week" title="${t.timing === 'days' ? 'Days in the last 7' : 'Entries in the last 7 days'}">${weekLabel}</span>
                 </span>
                 <span class="tile-bottom">
                     <span>
-                        <span class="tile-value">${last ? escapeHtml(formatValues(last.values)) : '—'}</span>
-                        <span class="tile-when">${last ? `Last logged ${relativeDay(last.date)}` : 'Not logged yet'}</span>
+                        <span class="tile-value">${escapeHtml(value)}</span>
+                        <span class="tile-when">${escapeHtml(when)}</span>
                     </span>
-                    <span class="sparkline" title="Last 7 days">${bars}</span>
+                    <span class="tile-side">
+                        ${plusButton}
+                        <span class="sparkline" title="Last 7 days">${bars}</span>
+                    </span>
                 </span>
-            </button>
+            </div>
         `;
     }).join('');
 }
@@ -252,11 +319,233 @@ function renderEntryValueInputs() {
     const container = document.getElementById('entry-values');
     container.innerHTML = tracker ? tracker.fields.map((f, i) => `
         <div class="form-group">
-            <label>${escapeHtml(capitalize(fieldLabel(f) || 'Value'))}</label>
+            <label data-label="${escapeHtml(capitalize(fieldLabel(f) || 'Value'))}">${escapeHtml(capitalize(fieldLabel(f) || 'Value'))}</label>
             <input type="number" step="any" data-field-index="${i}" placeholder="0" oninput="this.dataset.auto = ''">
         </div>
     `).join('') : '';
+    tallyMode = 'add';
+    feelingSelections = new Map();
+    copingRating = null;
     setUpTimingFields(tracker);
+    renderTallyPanel();
+    renderFeelingsFields();
+}
+
+// ---- Feelings check-ins ----
+
+let feelingSelections = new Map(); // feeling -> intensity (1-5)
+let copingRating = null;
+
+function scalePicker(value, onPick, label) {
+    return [1, 2, 3, 4, 5].map(n => `
+        <button type="button" class="scale-btn${value === n ? ' active' : ''}" aria-pressed="${value === n}"
+            aria-label="${escapeHtml(label)} ${n} of 5" onclick="${onPick}(${n})">${n}</button>
+    `).join('');
+}
+
+// Shows the feeling chips (and hides the plain number inputs) for check-in trackers.
+function renderFeelingsFields() {
+    const tracker = selectedTracker();
+    const feelings = Boolean(tracker && tracker.feelings);
+    document.getElementById('feelings-fields').hidden = !feelings;
+    document.getElementById('entry-values').hidden = feelings;
+    if (!feelings) return;
+
+    document.getElementById('feeling-chips').innerHTML = feelingNames(tracker).map(name => `
+        <button type="button" class="feeling-chip${isUnpleasant(name) ? ' unpleasant' : ''}${feelingSelections.has(name) ? ' selected' : ''}"
+            aria-pressed="${feelingSelections.has(name)}" data-name="${escapeHtml(name)}" onclick="toggleFeeling(this.dataset.name)">${escapeHtml(name)}</button>
+    `).join('') + '<button type="button" class="feeling-chip add" onclick="addFeeling()">+ Other</button>';
+
+    document.getElementById('feeling-intensities').innerHTML = [...feelingSelections].map(([name, value]) => `
+        <div class="feeling-row">
+            <span class="feeling-name${isUnpleasant(name) ? ' unpleasant' : ''}">${escapeHtml(name)}</span>
+            <div class="scale-picker small" data-name="${escapeHtml(name)}">
+                ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="scale-btn${value === n ? ' active' : ''}" aria-pressed="${value === n}"
+                    aria-label="${escapeHtml(name)} intensity ${n} of 5" onclick="setFeelingIntensity(this.parentElement.dataset.name, ${n})">${n}</button>`).join('')}
+            </div>
+        </div>
+    `).join('');
+    document.getElementById('coping-group').hidden = !tracker.fields.some(f => f.name === COPING_FIELD);
+    document.getElementById('coping-picker').innerHTML = scalePicker(copingRating, 'setCoping', 'Manageable');
+}
+
+function toggleFeeling(name) {
+    if (feelingSelections.has(name)) feelingSelections.delete(name);
+    else feelingSelections.set(name, 3);
+    renderFeelingsFields();
+}
+
+function setFeelingIntensity(name, value) {
+    feelingSelections.set(name, value);
+    renderFeelingsFields();
+}
+
+function setCoping(value) {
+    copingRating = copingRating === value ? null : value;
+    renderFeelingsFields();
+}
+
+// Adds a feeling to the check-in's list (saved on the tracker) and selects it.
+function addFeeling() {
+    const tracker = selectedTracker();
+    const name = (prompt('Add a feeling to your list:') || '').trim();
+    if (!name) return;
+    const existing = tracker.fields.find(f => f.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+        feelingSelections.set(existing.name, feelingSelections.get(existing.name) || 3);
+        renderFeelingsFields();
+        return;
+    }
+    const coping = tracker.fields.filter(f => f.name === COPING_FIELD);
+    const fields = tracker.fields.filter(f => f.name !== COPING_FIELD).concat([{ name, unit: '1-5' }], coping);
+    runAction(null, '', async () => {
+        const saved = await api('saveTracker', { originalName: tracker.name, tracker: { ...tracker, fields } });
+        trackers = trackers.map(t => (t.name === tracker.name ? saved : t));
+        feelingSelections.set(name, 3);
+        renderedValueInputsFor = JSON.stringify(saved); // keep the current selections
+        renderAll();
+        renderFeelingsFields();
+        showSuccess(`✓ Added "${name}" to your feelings`);
+    });
+}
+
+// ---- Daily tallies ----
+
+let tallyMode = 'add'; // "add" to the day, or "set" the day's total
+
+function selectedTracker() {
+    return trackers.find(t => t.name === document.getElementById('entry-name').value);
+}
+
+// Per-field totals for one tracker on one day. Single-value trackers count every value, so
+// entries logged before a field was renamed still add up.
+function dayTotals(tracker, date) {
+    const totals = tracker.fields.map(() => 0);
+    entries.filter(e => e.tracker === tracker.name && e.date === date).forEach(e => e.values.forEach(v => {
+        const i = tracker.fields.length === 1 ? 0 : tracker.fields.findIndex(f => f.name === v.field);
+        if (i !== -1) totals[i] += v.value;
+    }));
+    return totals.map(t => Math.round(t * 1000) / 1000);
+}
+
+function formatTotals(tracker, totals) {
+    return tracker.fields
+        .map((f, i) => (tracker.fields.length > 1 && f.name ? `${f.name} ` : '') + formatValue(totals[i], f.unit))
+        .join(' · ');
+}
+
+function setTallyMode(mode) {
+    tallyMode = mode;
+    renderTallyPanel();
+}
+
+// For tally trackers: shows the chosen day's running total and quick-add buttons, and
+// switches the form between adding to the day and setting its total (which only needs a day).
+function renderTallyPanel() {
+    const tracker = selectedTracker();
+    const tally = Boolean(tracker && tracker.tally);
+    const setting = tally && tallyMode === 'set';
+    const timing = tracker ? tracker.timing : 'moment';
+    const span = timing === 'span';
+
+    document.getElementById('tally-panel').hidden = !tally;
+    document.getElementById('moment-fields').hidden = timing === 'days' || (span && !setting);
+    document.getElementById('span-fields').hidden = !span || setting;
+    document.getElementById('days-fields').hidden = timing !== 'days';
+    document.getElementById('entry-time-group').hidden = setting;
+    document.getElementById('entry-submit').textContent = setting ? "Set day's total"
+        : timing === 'days' ? 'Save'
+            : tracker && tracker.feelings ? 'Save check-in' : 'Add entry';
+    renderEpisodePanel(tracker);
+    document.querySelectorAll('#entry-values label').forEach(label => {
+        label.textContent = setting ? `Day's total: ${label.dataset.label}` : label.dataset.label;
+    });
+    if (!tally) return;
+
+    document.querySelectorAll('.tally-mode .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === tallyMode));
+    const today = localDateString(new Date());
+    const spanEnd = span && !setting ? computeSpan().end : null;
+    const date = spanEnd ? localDateString(spanEnd) : document.getElementById('entry-date').value || today;
+    const totals = dayTotals(tracker, date);
+    document.getElementById('tally-day-label').textContent = date === today
+        ? 'Today so far'
+        : `${parseLocalDate(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} total`;
+    document.getElementById('tally-total').textContent = formatTotals(tracker, totals);
+    document.querySelectorAll('#entry-values input').forEach(input => {
+        input.placeholder = setting ? String(totals[input.dataset.fieldIndex]) : '0';
+    });
+    document.getElementById('tally-quick').innerHTML = tracker.fields.length === 1
+        ? [1, 2].map(n => `<button type="button" class="btn btn-small btn-secondary" onclick="quickTally(${n}, this)">+${n}</button>`).join('')
+        : '';
+}
+
+// For day trackers: whether one is going on now (with buttons to end it), or buttons to
+// start one, plus its usual pattern.
+function renderEpisodePanel(tracker) {
+    const panel = document.getElementById('episode-status');
+    if (!tracker || tracker.timing !== 'days') {
+        panel.innerHTML = '';
+        return;
+    }
+    const today = localDateString(new Date());
+    const ongoing = ongoingEpisode(tracker.name);
+    const summary = episodeSummary(tracker.name);
+    const name = escapeHtml(tracker.name);
+    const cycleDay = tracker.cycle ? cycleCalendar(tracker.name).dayOf(today) : null;
+    // Shortcuts to log related trackers (e.g. symptoms in the same category).
+    const related = trackers.filter(t => t.category === tracker.category && t.name !== tracker.name && t.timing !== 'days');
+    const relatedHtml = related.length ? `
+        <div class="episode-related">
+            <span>Log ${tracker.cycle ? 'a symptom' : 'something related'}:</span>
+            ${related.map(t => `<button type="button" class="chip-btn" style="--cat: ${categoryColor(t.category)}" data-name="${escapeHtml(t.name)}" onclick="selectTrackerForEntry(this.dataset.name)">${escapeHtml(t.name)}</button>`).join('')}
+        </div>` : '';
+    const cycleHtml = cycleDay ? `<div class="cycle-day-badge">Cycle day ${cycleDay}</div>` : '';
+    panel.innerHTML = cycleHtml + (ongoing ? `
+        <div class="episode-now">
+            <div>
+                <div class="tally-label">${tracker.cycle ? name : 'Going on now'}</div>
+                <div class="tally-total">${tracker.cycle ? `${name} day` : 'Day'} ${episodeLength(ongoing)}</div>
+                <div class="episode-since">since ${escapeHtml(shortDate(episodeFirstDay(ongoing)))}</div>
+            </div>
+            <div class="episode-actions">
+                <button type="button" class="btn btn-small" data-id="${escapeHtml(ongoing.id)}" onclick="endEpisode(this.dataset.id, '${today}', this)">Ended today</button>
+                ${episodeFirstDay(ongoing) < today ? `<button type="button" class="btn btn-small btn-secondary" data-id="${escapeHtml(ongoing.id)}" onclick="endEpisode(this.dataset.id, '${addDays(today, -1)}', this)">Ended yesterday</button>` : ''}
+            </div>
+        </div>
+        ${summary ? `<p class="episode-summary">${escapeHtml(summary)}</p>` : ''}
+        ${relatedHtml}
+        <p class="hint">Or log a different, past ${name} below.</p>
+    ` : `
+        <div class="episode-now">
+            <div>
+                <div class="tally-label">${name}</div>
+                <div class="episode-idle">${tracker.cycle ? `No ${name.toLowerCase()} right now` : 'Not going on right now'}</div>
+            </div>
+            <div class="episode-actions">
+                <button type="button" class="btn btn-small" data-name="${name}" onclick="startEpisode(this.dataset.name, this)">Started today</button>
+            </div>
+        </div>
+        ${summary ? `<p class="episode-summary">${escapeHtml(summary)}</p>` : ''}
+        ${relatedHtml}
+    `);
+}
+
+// Logs an amount straight away. From the form it goes on the form's day; from an Overview
+// card (which passes the tracker's name) it goes on today.
+function quickTally(amount, button, name) {
+    const tracker = name ? trackers.find(t => t.name === name) : selectedTracker();
+    if (!tracker) return;
+    const field = tracker.fields[0];
+    const today = localDateString(new Date());
+    const date = name ? today : document.getElementById('entry-date').value || today;
+    logEntry(button, '', {
+        date,
+        start: date === today ? toLocalDateTime(new Date()) : `${date}T12:00`,
+        end: '',
+        tracker: tracker.name,
+        notes: '',
+        values: [{ field: field.name, unit: field.unit, value: amount }]
+    }, `✓ ${tracker.name} +${formatValue(amount, field.unit)}`);
 }
 
 // ---- Entry times ----
@@ -267,6 +556,12 @@ function setUpTimingFields(tracker) {
     const span = tracker && tracker.timing === 'span';
     document.getElementById('moment-fields').hidden = span;
     document.getElementById('span-fields').hidden = !span;
+    if (tracker && tracker.timing === 'days') {
+        // A new episode starting today, or a past one if you fill in both days.
+        document.getElementById('episode-start').value = localDateString(new Date());
+        document.getElementById('episode-end').value = '';
+        return;
+    }
     if (!span) {
         document.getElementById('entry-time').value = formatTimeInput(roundedNow());
         return;
@@ -362,6 +657,7 @@ function updateSpanSummary() {
     summary.textContent = `${formatDuration(span.minutes)}: ${showDays ? day(span.start) : ''}${formatTime(span.start)} → ` +
         `${showDays && endDay !== startDay ? day(span.end) : ''}${formatTime(span.end)}`;
     autoFillDuration(span.minutes);
+    if (!document.getElementById('tally-panel').hidden) renderTallyPanel();
 }
 
 function autoFillDuration(minutes) {
@@ -392,8 +688,11 @@ function renderTrackerList() {
                 <div class="item-name">${escapeHtml(t.name)}</div>
                 <div class="item-meta">
                     ${categoryBadge(t.category)}
-                    <span>${t.fields.map(f => escapeHtml(fieldLabel(f))).join(' · ')}</span>
+                    <span>${t.feelings ? plural(feelingNames(t).length, 'feeling') : t.fields.map(f => escapeHtml(fieldLabel(f))).join(' · ')}</span>
                     ${t.timing === 'span' ? '<span class="timing-tag">Time span</span>' : ''}
+                    ${t.tally ? '<span class="timing-tag">Daily total</span>' : ''}
+                    ${t.feelings ? '<span class="timing-tag">Check-in</span>' : ''}
+                    ${t.timing === 'days' ? `<span class="timing-tag">${t.cycle ? 'Cycle' : 'Days'}</span>` : ''}
                 </div>
             </div>
             <div class="item-actions">
@@ -435,16 +734,26 @@ function handleAddEntry(event) {
         return;
     }
 
-    const values = [...document.querySelectorAll('#entry-values input')]
+    const values = tracker.feelings ? feelingValues(tracker) : [...document.querySelectorAll('#entry-values input')]
         .filter(input => input.value.trim() !== '')
         .map(input => {
-            const field = tracker.fields[input.dataset.fieldIndex];
-            return { field: field.name, unit: field.unit, value: Number(input.value) };
+            const index = Number(input.dataset.fieldIndex);
+            const field = tracker.fields[index];
+            return { index, field: field.name, unit: field.unit, value: Number(input.value) };
         });
-    if (!values.length) {
+    if (tracker.feelings && !values.some(v => v.field !== COPING_FIELD)) {
+        showError('Pick at least one feeling');
+        return;
+    }
+    if (!values.length && tracker.timing !== 'days') {
         showError('Please enter a value');
         return;
     }
+    const notes = document.getElementById('entry-notes').value.trim();
+
+    if (tracker.timing === 'days') return saveEpisode(event, tracker, values, notes);
+
+    if (tracker.tally && tallyMode === 'set') return setDayTotal(event, tracker, values, notes);
 
     // Time spans count toward the day they end, so a night's sleep belongs to the morning.
     let date = document.getElementById('entry-date').value;
@@ -462,24 +771,97 @@ function handleAddEntry(event) {
         if (time) start = `${date}T${time}`;
     }
 
-    runAction(submitButton(event), 'Adding…', async () => {
-        const entry = await api('addEntry', {
-            entry: {
-                date,
-                start,
-                end,
-                tracker: tracker.name,
-                notes: document.getElementById('entry-notes').value.trim(),
-                values
-            }
-        });
-        entries.push(entry);
-        sortEntries();
+    logEntry(submitButton(event), 'Adding…', { date, start, end, tracker: tracker.name, notes, values: values.map(stripIndex) },
+        `✓ Added ${tracker.name} entry`, true);
+}
 
-        document.getElementById('entry-notes').value = '';
-        document.getElementById('entry-name').value = '';
+// A day episode from the form: first day, and last day unless it's still going.
+function saveEpisode(event, tracker, values, notes) {
+    const first = document.getElementById('episode-start').value;
+    const last = document.getElementById('episode-end').value;
+    if (!first) return showError('Please pick the first day');
+    if (last && last < first) return showError("The last day can't be before the first");
+    if (first > localDateString(new Date())) return showError("The first day can't be in the future");
+    const ongoing = ongoingEpisode(tracker.name);
+    if (!last && ongoing) {
+        return showError(`${tracker.name} is already going (since ${shortDate(episodeFirstDay(ongoing))}). End it first, or enter a last day.`);
+    }
+    logEntry(submitButton(event), 'Saving…', {
+        date: first,
+        start: `${first}T00:00`,
+        end: last ? `${addDays(last, 1)}T00:00` : '',
+        tracker: tracker.name,
+        notes,
+        values: values.map(stripIndex)
+    }, last ? `✓ Logged ${tracker.name}, ${plural(daysBetween(first, last) + 1, 'day')}` : `✓ ${tracker.name} started`, true);
+}
+
+// A check-in's values: each selected feeling with its intensity, plus the coping rating.
+function feelingValues(tracker) {
+    const values = [...feelingSelections].map(([name, value]) => ({ index: -1, field: name, unit: '1-5', value }));
+    if (copingRating) values.push({ index: -1, field: COPING_FIELD, unit: '1-5', value: copingRating });
+    return values;
+}
+
+function stripIndex({ index, ...value }) {
+    return value;
+}
+
+// "Set day's total": logs the difference between the total you enter and what's already
+// logged that day, so earlier entries (and their times) are kept.
+function setDayTotal(event, tracker, values, notes) {
+    const date = document.getElementById('entry-date').value;
+    if (!date) return showError('Please pick a date');
+    const totals = dayTotals(tracker, date);
+    const target = tracker.fields.map((f, i) => {
+        const v = values.find(x => x.index === i);
+        return v ? v.value : totals[i];
+    });
+    const changes = values
+        .map(v => ({ ...v, value: Math.round((v.value - totals[v.index]) * 1000) / 1000 }))
+        .filter(v => v.value !== 0);
+    if (!changes.length) {
+        showSuccess(`${tracker.name} is already at ${formatTotals(tracker, target)}`);
+        return;
+    }
+    if (changes.some(v => v.value < 0) && !confirm(
+        `That's less than what's already logged (${formatTotals(tracker, totals)}). Log a correction to bring the day's total down to ${formatTotals(tracker, target)}?`
+    )) return;
+
+    const today = localDateString(new Date());
+    logEntry(submitButton(event), 'Saving…', {
+        date,
+        start: date === today ? toLocalDateTime(new Date()) : `${date}T21:00`,
+        end: '',
+        tracker: tracker.name,
+        notes: `Set day's total to ${formatTotals(tracker, target)}${notes ? `. ${notes}` : ''}`,
+        values: changes.map(stripIndex)
+    }, `✓ ${tracker.name} set to ${formatTotals(tracker, target)}`, true);
+}
+
+// Saves an entry and updates everything. With resetForm, clears the form afterwards; tally
+// trackers stay selected so you can keep adding to them.
+function logEntry(button, busyText, entry, message, resetForm) {
+    return runAction(button, busyText, async () => {
+        const saved = await api('addEntry', { entry });
+        entries.push(saved);
+        sortEntries();
+        if (resetForm) {
+            document.getElementById('entry-notes').value = '';
+            const tracker = trackers.find(t => t.name === entry.tracker);
+            feelingSelections = new Map();
+            copingRating = null;
+            if (tracker && tracker.tally) {
+                document.querySelectorAll('#entry-values input').forEach(input => {
+                    input.value = '';
+                    input.dataset.auto = '';
+                });
+            } else {
+                document.getElementById('entry-name').value = '';
+            }
+        }
         renderAll();
-        showSuccess(`✓ Added ${tracker.name} entry`);
+        showSuccess(message);
     });
 }
 

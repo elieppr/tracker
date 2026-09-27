@@ -104,13 +104,27 @@
                                     <option value="">Select a tracker...</option>
                                 </select>
                             </div>
+                            <!-- Tally trackers: the day's total so far, quick adds, and add/set modes -->
+                            <div id="tally-panel" class="tally-panel" hidden>
+                                <div class="tally-head">
+                                    <div>
+                                        <div class="tally-label" id="tally-day-label">Today so far</div>
+                                        <div class="tally-total" id="tally-total"></div>
+                                    </div>
+                                    <div class="tally-quick" id="tally-quick"></div>
+                                </div>
+                                <div class="segmented tally-mode" role="group" aria-label="How to log">
+                                    <button type="button" class="seg-btn active" data-mode="add" onclick="setTallyMode('add')">Add to the day</button>
+                                    <button type="button" class="seg-btn" data-mode="set" onclick="setTallyMode('set')">Set day's total</button>
+                                </div>
+                            </div>
                             <!-- Moments: a date and an optional time -->
                             <div class="form-row" id="moment-fields">
                                 <div class="form-group">
                                     <label for="entry-date">Date</label>
-                                    <input id="entry-date" type="date">
+                                    <input id="entry-date" type="date" onchange="renderTallyPanel()">
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group" id="entry-time-group">
                                     <label for="entry-time">Time</label>
                                     <input id="entry-time" type="time">
                                 </div>
@@ -144,12 +158,38 @@
                                 </div>
                                 <p class="span-summary" id="span-summary"></p>
                             </div>
+                            <!-- Day episodes: first and last day, or ongoing -->
+                            <div id="days-fields" hidden>
+                                <div class="episode-status" id="episode-status"></div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="episode-start">First day</label>
+                                        <input id="episode-start" type="date">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="episode-end">Last day</label>
+                                        <input id="episode-end" type="date">
+                                    </div>
+                                </div>
+                                <p class="hint episode-hint">Leave the last day empty if it's still going.</p>
+                            </div>
+                            <!-- Feelings check-ins: pick feelings, how strong each is, and how manageable it felt -->
+                            <div id="feelings-fields" class="feelings-fields" hidden>
+                                <label class="feelings-label">How are you feeling? <span>Pick as many as fit</span></label>
+                                <div class="feeling-chips" id="feeling-chips"></div>
+                                <div class="feeling-intensities" id="feeling-intensities"></div>
+                                <div class="form-group coping-group" id="coping-group">
+                                    <label>How manageable did it feel? <span class="optional">Optional</span></label>
+                                    <div class="scale-picker" id="coping-picker"></div>
+                                    <div class="scale-ends"><span>Overwhelming</span><span>Very manageable</span></div>
+                                </div>
+                            </div>
                             <div class="form-row" id="entry-values"></div>
                             <div class="form-group">
                                 <label for="entry-notes">Notes</label>
                                 <input id="entry-notes" type="text" placeholder="Optional">
                             </div>
-                            <button type="submit" class="btn btn-block">Add entry</button>
+                            <button type="submit" class="btn btn-block" id="entry-submit">Add entry</button>
                         </form>
                     </div>
 
@@ -237,6 +277,37 @@
                         </div>
                     </div>
                     <div id="assoc-chart"></div>
+                </div>
+
+                <div class="card" id="feelings-card" hidden>
+                    <div class="card-header">
+                        <div>
+                            <h2>Feelings</h2>
+                            <p class="card-sub">Which feelings come up most, how strong they are, and how manageable things felt.</p>
+                        </div>
+                        <div class="filters">
+                            <select id="feelings-tracker" onchange="renderInsights()" aria-label="Check-in" hidden></select>
+                        </div>
+                    </div>
+                    <div id="feelings-chart"></div>
+                </div>
+
+                <div class="card" id="cycle-card" hidden>
+                    <div class="card-header">
+                        <div>
+                            <h2>Through your cycle</h2>
+                            <p class="card-sub">How something changes from day 1 of your cycle onward. Shaded days are usually your period.</p>
+                        </div>
+                        <div class="filters">
+                            <select id="cycle-tracker" onchange="renderInsights()" aria-label="Cycle" hidden></select>
+                            <select id="cycle-metric" onchange="renderInsights()" aria-label="Tracker"></select>
+                            <select id="cycle-mode" onchange="renderInsights()" aria-label="Measure">
+                                <option value="freq">How often</option>
+                                <option value="avg">Average value</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="cycle-chart"></div>
                 </div>
 
                 <div class="insight-grid">
@@ -349,17 +420,56 @@
             </div>
             <div class="form-group">
                 <label for="tracker-timing">Timing</label>
-                <select id="tracker-timing">
+                <select id="tracker-timing" onchange="updateTrackerDialog()">
                     <option value="moment">Moment (like a coffee)</option>
                     <option value="span">Time span, with a start and end (like sleep)</option>
+                    <option value="days">Days, counted from start to end (like a period)</option>
                 </select>
             </div>
+            <label class="check-row" id="tracker-cycle-row" hidden>
+                <input id="tracker-cycle" type="checkbox">
+                <span>
+                    <strong>Repeats as a cycle</strong>
+                    <small>Like a period: every day counts as a day of the cycle, from each start until the next. You'll see the cycle day everywhere, and Insights can show what happens when in your cycle.</small>
+                </span>
+            </label>
+            <div class="form-group" id="tracker-colors-row">
+                <label for="tracker-colors">Timeline colors</label>
+                <select id="tracker-colors">
+                    <option value="amount">Darker = more (like hours or severity)</option>
+                    <option value="higher-better">Positive vs negative, higher is better (like mood)</option>
+                    <option value="lower-better">Positive vs negative, lower is better (like stress)</option>
+                </select>
+            </div>
+            <div class="form-group" id="tracker-missing-row">
+                <label for="tracker-missing">On days with no entry</label>
+                <select id="tracker-missing">
+                    <option value="auto">Let the app guess</option>
+                    <option value="zero">It didn't happen (like a headache or a run)</option>
+                    <option value="unknown">I just didn't log it (like mood or sleep)</option>
+                </select>
+                <p class="hint">Used by Insights, so forgetting to log doesn't count as "didn't happen".</p>
+            </div>
+            <label class="check-row" id="tracker-feelings-row">
+                <input id="tracker-feelings" type="checkbox" onchange="toggleFeelingsTracker()">
+                <span>
+                    <strong>Feelings check-in</strong>
+                    <small>Pick any number of feelings each time, with how strong each one is (1-5), plus how manageable it felt. The values below become your list of feelings.</small>
+                </span>
+            </label>
+            <label class="check-row" id="tracker-tally-row">
+                <input id="tracker-tally" type="checkbox">
+                <span>
+                    <strong>Add up into a daily total</strong>
+                    <small>For things you log bit by bit, like water or coffee. Each entry adds to the day's total, and you can also set the whole day's total at once.</small>
+                </span>
+            </label>
             <div class="form-group">
                 <label>Values to record</label>
                 <div class="field-row field-head" aria-hidden="true"><span>Name</span><span>Unit</span></div>
                 <div id="tracker-fields"></div>
                 <button type="button" class="btn-link" onclick="addFieldRow()">+ Add another value</button>
-                <p class="hint">E.g. a run could record Distance (km) and Duration (mins). Leave the name blank if the tracker records a single value.</p>
+                <p class="hint" id="tracker-fields-hint">E.g. a run could record Distance (km) and Duration (mins). Leave the name blank if the tracker records a single value.</p>
             </div>
             <div class="dialog-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeDialog('tracker-dialog')">Cancel</button>
@@ -374,6 +484,7 @@
         <div class="dialog-actions">
             <button type="button" class="btn btn-danger-outline" id="entry-dialog-delete">Delete</button>
             <span class="spacer"></span>
+            <button type="button" class="btn" id="entry-dialog-end" hidden>End today</button>
             <button type="button" class="btn btn-secondary" onclick="closeDialog('entry-dialog')">Close</button>
         </div>
     </dialog>
@@ -401,6 +512,7 @@
     <script src="js/api.js"></script>
     <script src="js/insights.js"></script>
     <script src="js/timeline.js"></script>
+    <script src="js/episodes.js"></script>
     <script src="js/manage.js"></script>
     <script src="js/app.js"></script>
 </body>

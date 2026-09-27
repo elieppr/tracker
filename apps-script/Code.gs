@@ -25,8 +25,17 @@ const SHEETS = {
   },
   trackers: {
     name: 'Trackers',
-    // Timing is "moment" (happens at a point in time) or "span" (has a start and an end).
-    headers: ['Name', 'Category', 'Timing', 'Fields', 'Unit'],
+    // Timing is "moment" (happens at a point in time), "span" (has a start and an end time)
+    // or "days" (whole-day episodes like a period or a cold; the end is blank while ongoing).
+    // Tally trackers (like water) add their entries up into a daily total. Cycle trackers are
+    // "days" trackers that repeat (like a period): every day counts as a day of the cycle.
+    // Feelings trackers are check-ins: each value is a feeling (with its intensity), picked from
+    // the tracker's list, plus an optional "Coping" rating.
+    // Missing says what a day without an entry means, for analysis: "zero" (it didn't happen,
+    // like a headache), "unknown" (it just wasn't logged, like mood), or "auto" (guess).
+    // Colors says how the timeline colors its entries: "amount" (darker = more), or
+    // "higher-better" / "lower-better" (positive vs negative, like mood).
+    headers: ['Name', 'Category', 'Timing', 'Tally', 'Cycle', 'Feelings', 'Missing', 'Colors', 'Fields', 'Unit'],
   },
   categories: {
     name: 'Categories',
@@ -42,7 +51,7 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_TRACKERS = [
   { name: 'Morning Run', category: 'Health', timing: 'span', fields: [{ name: 'Distance', unit: 'km' }, { name: 'Duration', unit: 'mins' }] },
-  { name: 'Water Intake', category: 'Health', timing: 'moment', fields: [{ name: '', unit: 'glasses' }] },
+  { name: 'Water Intake', category: 'Health', timing: 'moment', tally: true, fields: [{ name: '', unit: 'glasses' }] },
   { name: 'Meditation', category: 'Habit', timing: 'span', fields: [{ name: '', unit: 'mins' }] },
   { name: 'Reading', category: 'Habit', timing: 'span', fields: [{ name: '', unit: 'mins' }] },
 ];
@@ -65,10 +74,11 @@ const ACTIONS = {
     const tracker = getTable('trackers').rows.find(r => String(r.Name) === entry.tracker);
     if (!tracker) throw new Error(`Tracker "${entry.tracker}" not found`);
 
+    const episode = rowToTracker(tracker).timing === 'days';
     const values = (entry.values || [])
       .filter(v => v && v.value !== '' && v.value != null)
       .map(v => ({ field: String(v.field || ''), value: Number(v.value), unit: String(v.unit || '') }));
-    if (!values.length) throw new Error('Enter at least one value');
+    if (!values.length && !episode) throw new Error('Enter at least one value');
     if (values.some(v => !isFinite(v.value))) throw new Error('Values must be numbers');
 
     const start = entry.start ? String(entry.start) : '';
@@ -87,7 +97,9 @@ const ACTIONS = {
       created: new Date().toISOString(),
       values,
     };
-    appendRecords('entries', values.map(v => ({
+    // Episodes without values still need a row to hold their dates.
+    const rows = values.length ? values : [{ field: '', value: '', unit: '' }];
+    appendRecords('entries', rows.map(v => ({
       ID: saved.id,
       Date: saved.date,
       Tracker: saved.tracker,
@@ -101,6 +113,28 @@ const ACTIONS = {
       Created: saved.created,
     })));
     return saved;
+  },
+
+  // Changes an entry's times or notes, e.g. to end an ongoing episode.
+  updateEntry({ id, changes }) {
+    const update = {};
+    if (changes && 'start' in changes) update.Start = String(changes.start || '');
+    if (changes && 'end' in changes) update.End = String(changes.end || '');
+    if (changes && 'notes' in changes) update.Notes = String(changes.notes || '').trim();
+    if (changes && 'date' in changes) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(changes.date)) throw new Error('Invalid date');
+      update.Date = changes.date;
+    }
+    [update.Start, update.End].forEach(t => {
+      if (t && !TIME_PATTERN.test(t)) throw new Error('Invalid time');
+    });
+    const current = getTable('entries').rows.find(r => String(r.ID) === id);
+    if (!current) throw new Error('Entry not found');
+    const start = 'Start' in update ? update.Start : formatDateTime(current.Start);
+    const end = 'End' in update ? update.End : formatDateTime(current.End);
+    if (start && end && end <= start) throw new Error('The end has to be after the start');
+    updateWhere('entries', r => String(r.ID) === id, update);
+    return groupEntries(getTable('entries').rows.filter(r => String(r.ID) === id))[0];
   },
 
   deleteEntry({ id }) {
@@ -201,9 +235,9 @@ const ACTIONS = {
       const tracker = trackers.find(t => sameName(t.name, entry.tracker));
       if (!tracker) return;
       const values = fitSampleValues(tracker.fields, entry.values);
-      if (!values.length) return;
+      if (!values.length && entry.values.length) return; // none of its values fit this tracker
       const id = SAMPLE_PREFIX + Utilities.getUuid();
-      values.forEach(v => records.push({
+      (values.length ? values : [{ field: '', unit: '', value: '' }]).forEach(v => records.push({
         ID: id,
         Date: entry.date,
         Tracker: tracker.name,
@@ -389,7 +423,9 @@ function groupEntries(rows) {
       };
       byId.set(id, entry);
     }
-    entry.values.push({ field: String(r.Field ?? ''), value: Number(r.Value) || 0, unit: String(r.Unit ?? '') });
+    if (r.Value !== '' && r.Value != null) {
+      entry.values.push({ field: String(r.Field ?? ''), value: Number(r.Value) || 0, unit: String(r.Unit ?? '') });
+    }
   });
   return Array.from(byId.values());
 }
@@ -401,12 +437,18 @@ function rowToTracker(r) {
   } catch (err) {
     fields = [];
   }
-  // Trackers from before multi-value support only have a Unit column.
-  if (!Array.isArray(fields) || !fields.length) fields = [{ name: '', unit: String(r.Unit ?? '') }];
+  if (!Array.isArray(fields)) fields = [];
+  // Trackers from before multi-value support have no Fields, just a Unit column.
+  if (!String(r.Fields ?? '').trim()) fields = [{ name: '', unit: String(r.Unit ?? '') }];
   return {
     name: String(r.Name),
     category: String(r.Category),
-    timing: r.Timing === 'span' ? 'span' : 'moment',
+    timing: ['span', 'days'].includes(r.Timing) ? r.Timing : 'moment',
+    tally: r.Tally === true || String(r.Tally).toLowerCase() === 'true',
+    cycle: r.Timing === 'days' && (r.Cycle === true || String(r.Cycle).toLowerCase() === 'true'),
+    feelings: r.Timing !== 'days' && (r.Feelings === true || String(r.Feelings).toLowerCase() === 'true'),
+    missing: ['zero', 'unknown'].includes(r.Missing) ? r.Missing : 'auto',
+    colors: ['higher-better', 'lower-better'].includes(r.Colors) ? r.Colors : 'amount',
     fields: fields.map(f => ({ name: String(f.name || ''), unit: String(f.unit || '') })),
   };
 }
@@ -415,7 +457,12 @@ function trackerToRecord(t) {
   return {
     Name: t.name,
     Category: t.category,
-    Timing: t.timing === 'span' ? 'span' : 'moment',
+    Timing: ['span', 'days'].includes(t.timing) ? t.timing : 'moment',
+    Tally: Boolean(t.tally),
+    Cycle: Boolean(t.cycle),
+    Feelings: Boolean(t.feelings),
+    Missing: ['zero', 'unknown'].includes(t.missing) ? t.missing : 'auto',
+    Colors: ['higher-better', 'lower-better'].includes(t.colors) ? t.colors : 'amount',
     Fields: JSON.stringify(t.fields),
     Unit: t.fields.map(f => f.unit).filter(Boolean).join(', '), // readable summary for the sheet
   };
@@ -427,13 +474,25 @@ function cleanTracker(tracker) {
   const fields = ((tracker && tracker.fields) || [])
     .map(f => ({ name: String(f.name || '').trim(), unit: String(f.unit || '').trim() }))
     .filter(f => f.name || f.unit);
-  if (!fields.length) throw new Error('Add at least one value to record');
+  const timing = ['span', 'days'].includes(tracker.timing) ? tracker.timing : 'moment';
+  // Day episodes (like a period) don't need values; everything else records at least one.
+  if (!fields.length && timing !== 'days') throw new Error('Add at least one value to record');
   if (fields.length > 1 && fields.some(f => !f.name)) {
     throw new Error('Give each value a name when a tracker records more than one');
   }
   const names = fields.map(f => f.name.toLowerCase()).filter(Boolean);
   if (new Set(names).size !== names.length) throw new Error('Value names must be different');
-  return { name, category: String(tracker.category || ''), timing: tracker.timing === 'span' ? 'span' : 'moment', fields };
+  return {
+    name,
+    category: String(tracker.category || ''),
+    timing,
+    tally: timing !== 'days' && Boolean(tracker.tally),
+    cycle: timing === 'days' && Boolean(tracker.cycle),
+    feelings: timing !== 'days' && Boolean(tracker.feelings),
+    missing: ['zero', 'unknown'].includes(tracker.missing) ? tracker.missing : 'auto',
+    colors: ['higher-better', 'lower-better'].includes(tracker.colors) ? tracker.colors : 'amount',
+    fields,
+  };
 }
 
 function rowToCategory(r) {
@@ -473,19 +532,35 @@ const SAMPLE_CATEGORIES = [
   { name: 'Habit', color: '#8b5cf6' },
   { name: 'Time', color: '#f59e0b' },
   { name: 'Work', color: '#06b6d4' },
+  { name: 'Cycle', color: '#ec4899' },
+  { name: 'Mind', color: '#3b82f6' },
 ];
 
+const SAMPLE_FEELINGS = ['Happy', 'Calm', 'Content', 'Grateful', 'Excited', 'Anxious', 'Stressed', 'Overwhelmed', 'Sad', 'Lonely', 'Irritable', 'Angry'];
+
 const SAMPLE_TRACKERS = [
-  { name: 'Sleep', category: 'Health', timing: 'span', fields: [{ name: '', unit: 'hours' }] },
-  { name: 'Water Intake', category: 'Health', timing: 'moment', fields: [{ name: '', unit: 'glasses' }] },
-  { name: 'Headache', category: 'Health', timing: 'span', fields: [{ name: 'Severity', unit: '1-10' }, { name: 'Duration', unit: 'hours' }] },
-  { name: 'Morning Run', category: 'Health', timing: 'span', fields: [{ name: 'Distance', unit: 'km' }, { name: 'Duration', unit: 'mins' }] },
-  { name: 'Coffee', category: 'Habit', timing: 'moment', fields: [{ name: '', unit: 'cups' }] },
-  { name: 'Alcohol', category: 'Habit', timing: 'moment', fields: [{ name: '', unit: 'drinks' }] },
-  { name: 'Meditation', category: 'Habit', timing: 'span', fields: [{ name: '', unit: 'mins' }] },
-  { name: 'Reading', category: 'Habit', timing: 'span', fields: [{ name: '', unit: 'mins' }] },
-  { name: 'Screen Time', category: 'Time', timing: 'moment', fields: [{ name: '', unit: 'hours' }] },
-  { name: 'Work Done', category: 'Work', timing: 'span', fields: [{ name: '', unit: 'hours' }] },
+  { name: 'Sleep', category: 'Health', timing: 'span', missing: 'unknown', fields: [{ name: '', unit: 'hours' }] },
+  { name: 'Water Intake', category: 'Health', timing: 'moment', tally: true, missing: 'unknown', fields: [{ name: '', unit: 'glasses' }] },
+  { name: 'Headache', category: 'Health', timing: 'span', missing: 'zero', fields: [{ name: 'Severity', unit: '1-10' }, { name: 'Duration', unit: 'hours' }] },
+  { name: 'Morning Run', category: 'Health', timing: 'span', missing: 'zero', fields: [{ name: 'Distance', unit: 'km' }, { name: 'Duration', unit: 'mins' }] },
+  { name: 'Coffee', category: 'Habit', timing: 'moment', tally: true, missing: 'unknown', fields: [{ name: '', unit: 'cups' }] },
+  { name: 'Alcohol', category: 'Habit', timing: 'moment', tally: true, missing: 'zero', fields: [{ name: '', unit: 'drinks' }] },
+  { name: 'Meditation', category: 'Habit', timing: 'span', missing: 'zero', fields: [{ name: '', unit: 'mins' }] },
+  { name: 'Reading', category: 'Habit', timing: 'span', missing: 'zero', fields: [{ name: '', unit: 'mins' }] },
+  { name: 'Screen Time', category: 'Time', timing: 'moment', missing: 'unknown', fields: [{ name: '', unit: 'hours' }] },
+  { name: 'Work Done', category: 'Work', timing: 'span', missing: 'unknown', fields: [{ name: '', unit: 'hours' }] },
+  { name: 'Period', category: 'Cycle', timing: 'days', cycle: true, fields: [] },
+  { name: 'Cramps', category: 'Cycle', timing: 'moment', missing: 'zero', fields: [{ name: 'Severity', unit: '1-5' }] },
+  { name: 'Bloating', category: 'Cycle', timing: 'moment', missing: 'zero', fields: [{ name: 'Severity', unit: '1-5' }] },
+  { name: 'Mood', category: 'Mind', timing: 'moment', missing: 'unknown', colors: 'higher-better', fields: [{ name: '', unit: '1-5' }] },
+  {
+    name: 'Feelings',
+    category: 'Mind',
+    timing: 'moment',
+    feelings: true,
+    fields: SAMPLE_FEELINGS.map(name => ({ name, unit: '1-5' })).concat([{ name: 'Coping', unit: '1-5' }]),
+  },
+  { name: 'Vacation', category: 'Time', timing: 'days', fields: [] },
 ];
 
 // Matches generated values to a tracker's own fields: by position for single-value
@@ -517,6 +592,31 @@ function buildSampleEntries(today) {
   const pad = n => String(n).padStart(2, '0');
 
   const DAYS = 120;
+  const dateOf = i => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  // Periods: 4-6 days, starting every 26-30 days. Headaches are likelier on the first two days.
+  const periodRand = makeRandom(1234);
+  const periodDay = new Map(); // days-ago -> day number within the period
+  const periods = [];
+  for (let startI = DAYS - 1 - Math.floor(periodRand() * 20); startI >= 0; startI -= 26 + Math.floor(periodRand() * 5)) {
+    const length = 4 + Math.floor(periodRand() * 3);
+    periods.push({ startI, length });
+    for (let day = 1; day <= length && startI - day + 1 >= 0; day++) periodDay.set(startI - day + 1, day);
+  }
+  // Cycle day for each day (1 = first day of a period), once the first period has started.
+  const cycleDayOf = new Map();
+  periods.forEach(({ startI }, n) => {
+    const nextStartI = n + 1 < periods.length ? periods[n + 1].startI : -1;
+    for (let i = startI; i > nextStartI; i--) cycleDayOf.set(i, startI - i + 1);
+  });
+  // Symptoms use their own random stream so they don't reshuffle everything else.
+  const symptomRand = makeRandom(555);
+  // Feelings check-ins, and the "lazy" stretches where most logging gets forgotten, too.
+  const feelRand = makeRandom(9001);
+  const lazyDays = i => (i >= 30 && i <= 37) || (i >= 85 && i <= 90);
   const headacheNotes = ['Behind the eyes', 'Took ibuprofen', 'Woke up with it', 'Tension, neck and shoulders', 'Light sensitive'];
   const entries = [];
   let prevAlcohol = 0;
@@ -536,6 +636,7 @@ function buildSampleEntries(today) {
     const add = (tracker, values, time, notes, minutes) => {
       const end = minutes ? new Date(time.getTime() + minutes * 60000) : null;
       if ((end || time) > today) return; // nothing later than right now
+      if (lazyDays(i) && tracker !== 'Sleep' && feelRand() < 0.7) return; // forgot to log
       entries.push({
         date,
         tracker,
@@ -558,8 +659,10 @@ function buildSampleEntries(today) {
     const work = working ? clamp(roundTo(5.5 + rand() * 3.5 + (coffee >= 2 ? 0.5 : 0), 0.5), 2, 11) : 0;
     const screen = clamp(roundTo(working ? work + 1.5 + rand() * 3 : vacation ? 1 + rand() * 2 : 3 + rand() * 3, 0.5), 0.5, 14);
 
-    const triggers = Math.min(4, (water <= 5 ? 1 : 0) + (sleep < 6.5 ? 1 : 0) + (prevAlcohol >= 2 ? 2 : 0) + (screen >= 10 ? 1 : 0));
-    const headacheRisk = [0.02, 0.1, 0.6, 0.8, 0.9][triggers]; // triggers add up
+    const earlyPeriod = (periodDay.get(i) || 99) <= 3;
+    const triggers = Math.min(4, (water <= 5 ? 1 : 0) + (sleep < 6.5 ? 1 : 0) + (prevAlcohol >= 2 ? 2 : 0) +
+      (screen >= 10 ? 1 : 0) + (earlyPeriod ? 3 : 0));
+    const headacheRisk = [0.01, 0.05, 0.4, 0.8, 0.9][triggers]; // triggers add up
     const headache = headacheRand() < headacheRisk;
 
     prevAlcohol = alcohol;
@@ -571,21 +674,99 @@ function buildSampleEntries(today) {
     const wake = weekend || vacation ? at(8, 45, 45) : at(7, 0, 25);
     const bedtime = new Date(wake.getTime() - sleep * 3600000);
     add('Sleep', one('hours', sleep), bedtime, sleep < 6 && rand() < 0.4 ? pick(['Woke up at 3am', 'Restless night', 'Late night']) : '', sleep * 60);
+
+    // Cycle symptoms: cramps early in a period (and a little mid-cycle), bloating in the days
+    // before one, and mood dipping before a period and lifting mid-cycle.
+    const cycleDay = cycleDayOf.get(i);
+    const severity = (lo, hi) => lo + Math.floor(symptomRand() * (hi - lo + 1));
+    if (cycleDay) {
+      const crampChance = cycleDay === 1 ? 0.8 : cycleDay === 2 ? 0.55 : cycleDay === 3 ? 0.2 : cycleDay === 14 ? 0.15 : 0.02;
+      if (symptomRand() < crampChance) {
+        add('Cramps', [{ field: 'Severity', unit: '1-5', value: cycleDay <= 2 ? severity(3, 5) : severity(1, 3) }], at(11, 0, 180));
+      }
+      const bloatChance = cycleDay >= 23 ? 0.45 : cycleDay <= 2 ? 0.3 : 0.04;
+      if (symptomRand() < bloatChance) {
+        add('Bloating', [{ field: 'Severity', unit: '1-5', value: severity(2, 4) }], at(18, 0, 120));
+      }
+    }
+    let ran = false;
+    let meditated = false;
+    // An evening feelings check-in (on about half of days), shaped by how the day went.
+    const checkIn = () => {
+      if (feelRand() > (lazyDays(i) ? 0.1 : 0.55)) return;
+      const premenstrual = Boolean(cycleDay && (cycleDay >= 24 || cycleDay === 1));
+      const offDay = weekend || vacation;
+      const stress = (working ? work / 9 : 0.1) + (sleep < 6.5 ? 0.3 : 0) + (coffee >= 3 ? 0.15 : 0) + (headache ? 0.3 : 0) + (premenstrual ? 0.2 : 0);
+      const chance = {
+        Anxious: 0.08 + stress * 0.35,
+        Stressed: working ? 0.15 + work / 14 + (sleep < 6.5 ? 0.2 : 0) : 0.06,
+        Overwhelmed: (work >= 9 ? 0.35 : 0.04) + (headache ? 0.15 : 0),
+        Irritable: premenstrual ? 0.5 : sleep < 6.5 ? 0.22 : 0.06,
+        Sad: premenstrual ? 0.3 : headache ? 0.15 : 0.05,
+        Lonely: weekend && !vacation ? 0.12 : 0.03,
+        Angry: 0.04,
+        Calm: (offDay ? 0.45 : 0.14) + (meditated ? 0.25 : 0),
+        Happy: (offDay ? 0.45 : 0.18) + (ran ? 0.2 : 0),
+        Content: 0.25,
+        Grateful: 0.12,
+        Excited: vacation ? 0.4 : 0.05,
+      };
+      const unpleasant = ['Anxious', 'Stressed', 'Overwhelmed', 'Irritable', 'Sad', 'Lonely', 'Angry'];
+      let felt = SAMPLE_FEELINGS.filter(f => feelRand() < chance[f]);
+      if (!felt.length) felt = [stress > 0.8 ? 'Stressed' : 'Content'];
+      const values = felt.map(f => ({
+        field: f,
+        unit: '1-5',
+        value: clamp(Math.round(3 + (feelRand() - 0.5) * 2 + (unpleasant.includes(f) ? (stress - 0.6) * 1.5 : 0)), 1, 5),
+      }));
+      if (feelRand() < 0.8) {
+        const worst = Math.max(0, ...values.filter(v => unpleasant.includes(v.field)).map(v => v.value));
+        const coping = 4.1 - Math.max(0, worst - 2) * 0.7 - (sleep < 6.5 ? 0.6 : 0) + (meditated ? 0.7 : 0) + (feelRand() - 0.5) * 1;
+        values.push({ field: 'Coping', unit: '1-5', value: clamp(Math.round(coping), 1, 5) });
+      }
+      const notes = felt.includes('Overwhelmed') && feelRand() < 0.4 ? pick(['Too many deadlines', 'Long meetings', 'Took a walk, helped a bit'])
+        : felt.includes('Calm') && meditated && feelRand() < 0.3 ? 'Meditation helped' : '';
+      add('Feelings', values, at(21, 0, 50), notes);
+    };
+    if (symptomRand() < 0.7) {
+      const premenstrual = cycleDay && (cycleDay >= 24 || cycleDay === 1);
+      const midCycle = cycleDay && cycleDay >= 8 && cycleDay <= 14;
+      const mood = clamp(Math.round(3.6 + (symptomRand() - 0.5) * 1.6 - (premenstrual ? 1 : 0) + (midCycle ? 0.5 : 0) - (headache ? 0.8 : 0)), 1, 5);
+      add('Mood', one('1-5', mood), at(21, 30, 30));
+    }
+    // Water is logged glass by glass through the day (in 1-3 glass sips), coffee cup by cup.
+    const logWater = () => {
+      let left = water;
+      let hour = 8.5 + timeRand() * 1.5;
+      while (left > 0) {
+        const glasses = Math.min(left, 1 + Math.floor(timeRand() * 3));
+        add('Water Intake', one('glasses', glasses), at(Math.floor(hour), Math.round((hour % 1) * 60)));
+        left -= glasses;
+        hour = Math.min(21.5, hour + 1.5 + timeRand() * 3);
+      }
+    };
     if (vacation) {
-      if (rand() < 0.5) add('Water Intake', one('glasses', water), at(21, 0, 30));
+      if (rand() < 0.5) logWater();
       if (alcohol) add('Alcohol', one('drinks', alcohol), at(20, 0, 60), rand() < 0.3 ? 'Vacation dinner' : '');
       if (rand() < 0.5) {
         const mins = 30 + Math.round(rand() * 60);
         add('Reading', one('mins', mins), at(15, 0, 60), rand() < 0.2 ? 'Beach read' : '', mins);
       }
+      checkIn();
       continue;
     }
 
-    if (rand() < 0.9) add('Water Intake', one('glasses', water), at(21, 0, 30));
-    if (coffee) add('Coffee', one('cups', coffee), new Date(wake.getTime() + (30 + roundTo(timeRand() * 30, 5)) * 60000));
+    if (rand() < 0.9) logWater();
+    for (let cup = 0; cup < coffee; cup++) {
+      const time = cup === 0
+        ? new Date(wake.getTime() + (30 + roundTo(timeRand() * 30, 5)) * 60000)
+        : at(10 + cup * 2, 0, 50);
+      add('Coffee', one('cups', 1), time);
+    }
 
     const runChance = (dow === 6 ? 0.6 : dow === 0 ? 0.4 : 0.3) * (sleep < 6.25 ? 0.4 : 1);
     if (rand() < runChance) {
+      ran = true;
       const km = Math.round((weekend ? 5.5 + rand() * 4 : 3.5 + rand() * 3) * 10) / 10;
       const pace = 5.4 + rand();
       const mins = Math.round(km * pace);
@@ -598,6 +779,7 @@ function buildSampleEntries(today) {
 
     const meditateChance = 0.65 - 0.3 * Math.sin(Math.PI * progress); // dips mid-period, then recovers
     if (rand() < meditateChance) {
+      meditated = true;
       const mins = pick([5, 10, 10, 15, 20]);
       add('Meditation', one('mins', mins), new Date(wake.getTime() + 15 * 60000), '', mins);
     }
@@ -621,6 +803,22 @@ function buildSampleEntries(today) {
         { field: 'Duration', unit: 'hours', value: hours },
       ], at(13, 0, 150), headacheRand() < 0.4 ? headacheNotes[Math.floor(headacheRand() * headacheNotes.length)] : '', hours * 60);
     }
+    checkIn();
   }
+  // Whole-day episodes: dates only, ending at the midnight after the last day (blank while ongoing).
+  const episode = (tracker, startI, lastI, notes) => {
+    const start = dateOf(startI);
+    entries.push({
+      date: start,
+      tracker,
+      values: [],
+      notes: notes || '',
+      start: `${start}T00:00`,
+      end: lastI > 0 ? `${dateOf(lastI - 1)}T00:00` : '',
+      created: new Date(today.getFullYear(), today.getMonth(), today.getDate() - startI, 8, 0).toISOString(),
+    });
+  };
+  periods.forEach(({ startI, length }, n) => episode('Period', startI, startI - length + 1, n % 3 === 1 ? 'Cramps on day 1' : ''));
+  episode('Vacation', 64, 58, 'Beach trip');
   return entries;
 }
